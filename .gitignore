@@ -1,0 +1,5 @@
+slurm
+archives
+output
+__pycache__
+*.pyc
