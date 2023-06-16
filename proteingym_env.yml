@@ -1,0 +1,33 @@
+name: proteingym_env
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - anaconda
+  - defaults
+  - pypi
+dependencies:
+  - python
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - tqdm
+  - pip
+  - pytorch=1.13.1
+  - torchvision=0.14.1 
+  - torchaudio=0.13.1
+  - pytorch-cuda=11.7
+  - biopython
+  - pip:
+      - wandb
+      - transformers
+      - tokenizers
+      - datasets
+      - jax
+      - flax
+      - optax
+      - vespa-effect
+      - tensorflow=2.2
+      - tensorflow-addons==0.10.0
+      - tensorflow-probability==0.10.1
