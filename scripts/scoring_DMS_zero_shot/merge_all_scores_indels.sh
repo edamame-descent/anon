@@ -22,10 +22,10 @@ module load cuda/10.2
 #source activate proteingym_env
 source activate protein_transformer_env
 
-export DMS_assays_location=/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/DMS_assays/substitutions
-export model_scores_location=/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/model_scores/zero_shot_substitutions
-export merged_scores_dir='merged_scores_20230612'
-export mutation_type='substitutions'
+export DMS_assays_location=/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/DMS_assays/indels
+export model_scores_location=/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/model_scores/zero_shot_indels
+export merged_scores_dir='merged_scores_20230613'
+export mutation_type='indels'
 
 srun python3 ~/proteingym_dev/proteingym/merge.py \
             --DMS_assays_location ${DMS_assays_location} \

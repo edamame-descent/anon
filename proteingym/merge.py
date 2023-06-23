@@ -27,36 +27,41 @@ def main():
 
     with open('/home/pn73/proteingym_dev/config.json', 'r') as f:
         config = json.load(f)
-    list_models = config["model_list_zero_shot_substitutions_DMS"].keys() if args.mutation_type=="substitutions" else config["model_list_zero_shot_substitutions_DMS"].keys()
+    reference_field = "model_list_zero_shot_substitutions_DMS" if args.mutation_type=="substitutions" else "model_list_zero_shot_indels_DMS"
+    list_models = config[reference_field].keys()
     
-    for DMS_index, DMS_id in enumerate(list_DMS[87:]):
+    for DMS_index, DMS_id in enumerate(list_DMS[:87]):
         print(DMS_id)
         DMS_filename = reference_file["DMS_filename"][reference_file["DMS_id"]==DMS_id].values[0]
         DMS_file = pd.read_csv(os.path.join(args.DMS_assays_location,DMS_filename))
         print("Length DMS: {}".format(len(DMS_file)))
         #if "mutant" not in DMS_file: DMS_file["mutant"]=DMS_file["mutated_sequence"]
+        if "mutated_sequence" not in DMS_file: DMS_file["mutated_sequence"]=DMS_file["mutant"]
         #mutant_key="mutant"
         #if mutation_type=="substitutions": mutant_key="mutant"
         score_files={}
         all_model_scores = DMS_file
         for model in list_models:
-            mutant_merge_key = config["model_list_zero_shot_substitutions_DMS"][model]["key"]
-            input_score_name = config["model_list_zero_shot_substitutions_DMS"][model]["input_score_name"]
+            mutant_merge_key = config[reference_field][model]["key"]
+            input_score_name = config[reference_field][model]["input_score_name"]
             try:
-                score_files[model] = pd.read_csv(os.path.join(args.model_scores_location,config["model_list_zero_shot_substitutions_DMS"][model]["location"],DMS_filename))
-                if "RITA" in model: 
-                    score_files[model]["mutant"] = DMS_file["mutant"]
-                    score_files[model].to_csv(os.path.join(args.model_scores_location,config["model_list_zero_shot_substitutions_DMS"][model]["location"],DMS_filename),index=False)
-                if model=="ESM1v_single":
-                    score_files[model]['Ensemble_ESM1v'] = (score_files[model]['esm1v_t33_650M_UR90S_1']+score_files[model]['esm1v_t33_650M_UR90S_2']+score_files[model]['esm1v_t33_650M_UR90S_3']+score_files[model]['esm1v_t33_650M_UR90S_4']+score_files[model]['esm1v_t33_650M_UR90S_5'])/5.0
-                    score_files[model].to_csv(os.path.join(args.model_scores_location,config["model_list_zero_shot_substitutions_DMS"][model]["location"],DMS_filename),index=False)
-                score_files[model][model] = config["model_list_zero_shot_substitutions_DMS"][model]["directionality"] * score_files[model][input_score_name]
+            #if True:
+                score_files[model] = pd.read_csv(os.path.join(args.model_scores_location,config[reference_field][model]["location"],DMS_filename))
+                if "sequence" in score_files[model]: score_files[model]["mutated_sequence"]=score_files[model]["sequence"]
+                #if "RITA" in model: 
+                #    score_files[model]["mutant"] = DMS_file["mutant"]
+                #    score_files[model].to_csv(os.path.join(args.model_scores_location,config["model_list_zero_shot_substitutions_DMS"][model]["location"],DMS_filename),index=False)
+                #if model=="ESM1v_single":
+                #    score_files[model]['Ensemble_ESM1v'] = (score_files[model]['esm1v_t33_650M_UR90S_1']+score_files[model]['esm1v_t33_650M_UR90S_2']+score_files[model]['esm1v_t33_650M_UR90S_3']+score_files[model]['esm1v_t33_650M_UR90S_4']+score_files[model]['esm1v_t33_650M_UR90S_5'])/5.0
+                #    score_files[model].to_csv(os.path.join(args.model_scores_location,config["model_list_zero_shot_substitutions_DMS"][model]["location"],DMS_filename),index=False)
+                score_files[model][model] = config[reference_field][model]["directionality"] * score_files[model][input_score_name]
                 score_files[model] = score_files[model][[mutant_merge_key,model]]
                 score_files[model].drop_duplicates(inplace=True)
                 score_files[model] = score_files[model].groupby(mutant_merge_key).mean().reset_index()
                 score_files[model] = score_files[model][score_files[model][mutant_merge_key]!='wt'] #remove wild type from scoring files (eg., EVE)
                 all_model_scores = pd.merge(all_model_scores, score_files[model], on = mutant_merge_key, how = 'inner')
             except:
+            #else:
                 print("Could not load model {} for assay {}".format(model,DMS_id))
                         
         all_model_scores['RITA_ensemble'] = (standardization(all_model_scores['RITA_s'])+standardization(all_model_scores['RITA_m'])+standardization(all_model_scores['RITA_l'])+standardization(all_model_scores['RITA_xl']))/4.0

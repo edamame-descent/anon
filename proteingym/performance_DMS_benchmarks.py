@@ -234,6 +234,8 @@ def main():
         except:
             print("At least one scoring file missing")
             continue
+        
+        ##if 'DMS_score_bin' not in merged_scores: merged_scores['DMS_score_bin'] = merged_scores['DMS_score'] > DMS_binarization_cutoff_ProteinGym
 
         if not args.indel_mode and args.performance_by_depth:
             merged_scores['mutation_depth']=merged_scores['mutant'].apply(lambda x: len(x.split(":")))
@@ -244,8 +246,10 @@ def main():
         for score in score_variables:
             performance_DMS['Spearman'][score] = spearmanr(merged_scores['DMS_score'], merged_scores[score])[0]
             try:
+            #if True:
                 performance_DMS['AUC'][score] = roc_auc_score(y_true=merged_scores['DMS_score_bin'], y_score=merged_scores[score])
             except:
+            #else:
                 print("AUC issue with: {} for model: {}".format(DMS_id,score))
                 performance_DMS['AUC'][score] = np.nan
             try:
