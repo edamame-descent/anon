@@ -1,6 +1,55 @@
+# Temporarily ignore CSVs until we choose which ones should be committed
+*.csv
 slurm
 archives
 output
 __pycache__
 *.pyc
+.ipynb_checkpoints
+
+# From GitHub .gitignore Python template
+
+# Ignore large files, download manually
+# data/reference_files/
+# data/
+alignments
+baseline_models/model_checkpoints/
+outputs/intermediate_outputs/
+outputs/output_scores/
+clustal/
+processed_data/
+# Optional:
+baseline_models/bash_scripts/old/
+# Slurm script outputs
+*.out
+*.err
+logs/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Jupyter Notebook
 .ipynb_checkpoints
