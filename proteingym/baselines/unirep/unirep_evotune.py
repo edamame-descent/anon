@@ -4,7 +4,8 @@ Source: https://github.com/chloechsu/combining-evolutionary-and-assay-labelled-d
 '''
 
 import argparse
-import os
+import os 
+import sys
 import pathlib
 import random
 
@@ -13,7 +14,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
-
+sys.path.append("../..")
 from proteingym.baselines.unirep.unirep import babbler1900 as babbler
 from proteingym.baselines.unirep import utils
 

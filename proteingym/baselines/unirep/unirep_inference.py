@@ -5,12 +5,13 @@ Source: https://github.com/chloechsu/combining-evolutionary-and-assay-labelled-d
 
 import argparse
 import os
+import sys
 import pathlib
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-
+sys.path.append("../..")
 from proteingym.baselines.unirep.unirep import babbler1900
 from proteingym.baselines.unirep.utils import load_and_filter_seqs, save, format_batch_seqs, nonpad_len
 

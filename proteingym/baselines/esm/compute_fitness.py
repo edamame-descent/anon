@@ -16,6 +16,11 @@ import itertools
 from typing import List, Tuple
 import torch
 
+# Adjust path to import proteingym at ../.. relative to this file
+pg_path = "../.." #os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+print("Debug: Importing from "+pg_path)
+sys.path.append(pg_path)  # pg_path
+
 from proteingym.baselines.esm import esm
 from esm import Alphabet, FastaBatchedDataset, ProteinBertModel, pretrained, MSATransformer
 
@@ -260,33 +265,66 @@ def compute_pppl(row, sequence, model, alphabet, offset_idx):
 
 
 def main(args):
+    print("Arguments:", args)
+
     # Load the deep mutational scan
     if args.dms_index is not None:
         mapping_protein_seq_DMS = pd.read_csv(args.dms_mapping)
         DMS_id = mapping_protein_seq_DMS["DMS_id"][args.dms_index]
         print("Compute scores for DMS: "+str(DMS_id))
-        args.sequence = mapping_protein_seq_DMS["target_seq"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0].upper()
-        args.dms_input = str(args.dms_input)+os.sep+mapping_protein_seq_DMS["DMS_filename"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
-        mutant_col = mapping_protein_seq_DMS["DMS_mutant_column"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0] if "DMS_mutant_column" in mapping_protein_seq_DMS.columns else "mutant"
-        DMS_phenotype_name = mapping_protein_seq_DMS["DMS_phenotype_name"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0] if "DMS_phenotype_name" in mapping_protein_seq_DMS else "DMS_score"
+        row = mapping_protein_seq_DMS[mapping_protein_seq_DMS["DMS_id"]==DMS_id]
+        if len(row) == 0:
+            raise ValueError("No mappings found for DMS: "+str(DMS_id))
+        elif len(row) > 1:
+            raise ValueError("Multiple mappings found for DMS: "+str(DMS_id))
+        
+        row = row.iloc[0]
+        row = row.replace(np.nan, "")  # Makes it more manageable to use in strings
+
+        args.sequence = row["target_seq"].upper()
+        args.dms_input = str(args.dms_input)+os.sep+row["DMS_filename"]
+
+        mutant_col = row["DMS_mutant_column"] if "DMS_mutant_column" in mapping_protein_seq_DMS.columns else "mutant"
+        DMS_phenotype_name = row["DMS_phenotype_name"] if "DMS_phenotype_name" in mapping_protein_seq_DMS else "DMS_score"
         #args.dms_output=str(args.dms_output)+os.sep+DMS_id+'_'+args.model_type+'_'+args.scoring_strategy+'_'+str(args.seed)+'_' + mapping_protein_seq_DMS["MSA_filename"][args.dms_index] +'_cov_'+str(args.hhfilter_min_cov)+'_max_id_'+str(args.hhfilter_max_seq_id)+'_min_id_'+str(args.hhfilter_min_seq_id)+'.csv'
         args.dms_output=str(args.dms_output)+os.sep+DMS_id+'.csv'
-        args.msa_path= str(args.msa_path)+os.sep+mapping_protein_seq_DMS["MSA_filename"][args.dms_index] # msa_path is expected to be the path to the directory where MSAs are located.
-        target_seq_start_index = mapping_protein_seq_DMS["start_idx"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0] if "start_idx" in mapping_protein_seq_DMS.columns else 1
+        
+        # Warn if some values are NaN
+        if mapping_protein_seq_DMS.isna().any().any():
+            print("Warning: Some NaN values found in the dataframe")
+
+        target_seq_start_index = row["start_idx"] if "start_idx" in mapping_protein_seq_DMS.columns and row["start_idx"]!="" else 1
         target_seq_end_index = target_seq_start_index + len(args.sequence) 
-        msa_start_index = mapping_protein_seq_DMS["MSA_start"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0] if "MSA_start" in mapping_protein_seq_DMS.columns else 1
-        msa_end_index = mapping_protein_seq_DMS["MSA_end"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0] if "MSA_end" in mapping_protein_seq_DMS.columns else len(args.sequence)
-        MSA_weight_file_name = args.msa_weights_folder + os.sep + mapping_protein_seq_DMS["weight_file_name"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0] if ("weight_file_name" in mapping_protein_seq_DMS.columns and args.msa_weights_folder is not None) else None
-        if ((target_seq_start_index!=msa_start_index) or (target_seq_end_index!=msa_end_index)) and args.model_type=="MSA_transformer":
-            args.sequence = args.sequence[msa_start_index-1:msa_end_index]
-            target_seq_start_index = msa_start_index
-            target_seq_end_index = msa_end_index
+        
+        if "MSA_transformer" in args.model_type:  # model_type is a list
+            # Check MSA_filename exists (might be NaN / empty)
+            msa_filename = row["MSA_filename"]
+            print("Temp: MSA_filename: "+msa_filename)
+            if msa_filename == "":
+                raise ValueError("No MSA found for DMS: "+str(DMS_id))
+            
+            args.msa_path= str(args.msa_path)+os.sep+msa_filename # msa_path is expected to be the path to the directory where MSAs are located.
+            
+            msa_start_index = int(row["MSA_start"]) if "MSA_start" in mapping_protein_seq_DMS.columns else 1
+            msa_end_index = int(row["MSA_end"]) if "MSA_end" in mapping_protein_seq_DMS.columns else len(args.sequence)
+            print(f"Tmp: MSA_start: {msa_start_index}, MSA_end: {msa_end_index}")
+            
+            MSA_weight_file_name = args.msa_weights_folder + os.sep + row["weight_file_name"] if ("weight_file_name" in mapping_protein_seq_DMS.columns and args.msa_weights_folder is not None) else None
+            if ((target_seq_start_index!=msa_start_index) or (target_seq_end_index!=msa_end_index)):
+                args.sequence = args.sequence[msa_start_index-1:msa_end_index]
+                target_seq_start_index = msa_start_index
+                target_seq_end_index = msa_end_index
+        # else:
+            # print("Model: "+args.model_type)
+        
         df = DMS_file_cleanup(args.dms_input, target_seq=args.sequence, start_idx=target_seq_start_index, end_idx=target_seq_end_index, DMS_mutant_column=mutant_col, DMS_phenotype_name=DMS_phenotype_name)
         args.mutation_col='mutant'
     else:
+        
         df = pd.read_csv(args.dms_input)
 
     # inference for each model
+    print("Starting model scoring")
     for model_location in args.model_location:
         model, alphabet = pretrained.load_model_and_alphabet(model_location)
         model_location = model_location.split("/")[-1].split(".")[0]
@@ -294,6 +332,8 @@ def main(args):
         if torch.cuda.is_available() and not args.nogpu:
             model = model.cuda()
             print("Transferred model to GPU")
+        else:
+            print(f"Not using GPU. torch.cuda.is_available(): {torch.cuda.is_available()}, args.nogpu: {args.nogpu}")
 
         batch_converter = alphabet.get_batch_converter()
 
@@ -306,6 +346,7 @@ def main(args):
             ), "MSA Transformer only supports masked marginal strategy"
 
             batch_labels, batch_strs, batch_tokens = batch_converter(data)
+            print(f"Batch sizes: {batch_tokens.size()}")
 
             all_token_probs = []
             for i in tqdm(range(batch_tokens.size(2))):
@@ -324,11 +365,11 @@ def main(args):
                     token_probs = torch.log_softmax(
                         model(batch_tokens_masked.cuda())["logits"], dim=-1
                     )
-                all_token_probs.append(token_probs[:, 0, i-start])  # vocab size
-            token_probs = torch.cat(all_token_probs, dim=0).unsqueeze(0)
+                all_token_probs.append(token_probs[:, 0, i-start].detach().cpu())  # vocab size
+            token_probs = torch.cat(all_token_probs, dim=0).unsqueeze(0)  # Hopefully this is on CPU
             df[model_location] = df.apply(
                 lambda row: label_row(
-                    row[args.mutation_col], args.sequence, token_probs, alphabet, args.offset_idx
+                    row[args.mutation_col], args.sequence, token_probs.detach().cpu(), alphabet, args.offset_idx
                 ),
                 axis=1,
             )

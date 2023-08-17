@@ -71,7 +71,6 @@ def main():
     parser.add_argument('--indel_mode', action='store_true', help='Whether to score sequences with insertions and deletions')
     parser.add_argument('--performance_file', default='RITA_small.csv', type=str, help='Name of folder to write model scores to')
     args = parser.parse_args()
-
     model = AutoModelForCausalLM.from_pretrained(args.RITA_model_name_or_path,trust_remote_code=True)
     model.cuda()
     tokenizer = AutoTokenizer.from_pretrained("/n/groups/marks/projects/marks_lab_and_oatml/protein_transformer/baseline_models/RITA/tokenizer")

@@ -2,7 +2,7 @@
 
 ## Overview
 
-ProteinGym is an extensive set of Deep Mutational Scanning (DMS) assays curated to enable thorough comparisons of various mutation effect predictors indifferent regimes. It is comprised of two benchmarks: 1) a substitution benchmark which currently consists of the experimental characterisation of ∼1.5M missense variants across 87 DMS assays 2) an indel benchmark that includes ∼300k mutants across 7 DMS assays.
+ProteinGym is an extensive set of Deep Mutational Scanning (DMS) assays curated to enable thorough comparisons of various mutation effect predictors indifferent regimes. It is comprised of two benchmarks: 1) a substitution benchmark which currently consists of the experimental characterisation of ∼3.3M missense variants across 209 DMS assays 2) an indel benchmark that includes ∼300k mutants across 74 DMS assays.
 
 Each processed file in each benchmark corresponds to a single DMS assay, and contains the following variables:
 - mutant (str): describes the set of substitutions to apply on the reference sequence to obtain the mutated sequence (eg., A1P:D2N implies the amino acid 'A' at position 1 should be replaced by 'P', and 'D' at position 2 should be replaced by 'N'). Present in the the ProteinGym substitution assays only (not indels).
@@ -15,14 +15,14 @@ Additionally, we provide two reference files for each benharmk that give further
 - The target sequence (target_seq) used in the assay
 - Details on how the DMS_score was created from the raw files and how it was binarized 
 
-To download the substitution benchmark (~867M unzipped):
+To download the substitution benchmark (~1.3G unzipped):
 ```
 curl -o ProteinGym_substitutions.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_substitutions.zip 
 unzip ProteinGym_substitutions.zip
 rm ProteinGym_substitutions.zip
 ```
 
-Similarly, to download the indel benchmark (~223M unzipped):
+Similarly, to download the indel benchmark (~212M unzipped):
 ```
 curl -o ProteinGym_indels.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_indels.zip
 unzip ProteinGym_indels.zip
@@ -80,7 +80,7 @@ rm scores_all_models_proteingym_indels.zip
 
 ## Multiple Sequence Alignments (MSAs)
 
-The MSAs used to train alignment-based methods or used at inference in Tranception with retrieval and MSA Transformer may be downloaded as follows (~2.2GB unzipped):
+The MSAs used to train alignment-based methods or used at inference in Tranception with retrieval and MSA Transformer may be downloaded as follows (~4.3GB unzipped):
 ```
 curl -o MSA_ProteinGym.zip https://marks.hms.harvard.edu/proteingym/MSA_ProteinGym.zip
 unzip MSA_ProteinGym.zip
@@ -110,10 +110,10 @@ This project is available under the MIT license.
 ## Reference
 If you use ProteinGym in your work, please cite the following paper:
 ```
-Notin, P., Dias, M., Frazer, J., Marchena-Hurtado, J., Gomez, A., Marks, D.S., Gal, Y. (2022). Tranception: Protein Fitness Prediction with Autoregressive Transformers and Inference-time Retrieval. ICML.
+TBD
 ```
 
 ## Links
-- Original paper: https://proceedings.mlr.press/v162/notin22a.html
+<!-- - Original paper: https://proceedings.mlr.press/v162/notin22a.html -->
 - Website: https://www.proteingym.org/
 - HuggingFace: https://huggingface.co/datasets/OATML-Markslab/ProteinGym

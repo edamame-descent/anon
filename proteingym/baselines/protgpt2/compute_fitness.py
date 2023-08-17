@@ -64,7 +64,7 @@ def main():
     Main script to score sets of mutated protein sequences (substitutions or indels) with Tranception.
     """
     parser = argparse.ArgumentParser(description='Tranception scoring')
-    parser.add_argument('--ProtGP2_model_name_or_path', default="./", type=str, help='Name of or path to ProtGPT2 model')
+    parser.add_argument('--ProtGPT2_model_name_or_path', default="./", type=str, help='Name of or path to ProtGPT2 model')
     parser.add_argument('--DMS_reference_file_path', default='./proteingym/ProteinGym_reference_file_substitutions.csv', type=str, help='Path of DMS folder')
     parser.add_argument('--DMS_data_folder', default='./DMS_files/ProteinGym_substitutions', type=str, help='Path of DMS folder')
     parser.add_argument('--DMS_index', type=int, help='Index of DMS to score')
@@ -73,14 +73,14 @@ def main():
     parser.add_argument('--performance_file', default='ProtGP2.csv', type=str, help='Name of output summary performance file')
     args = parser.parse_args()
 
-    model = AutoModelForCausalLM.from_pretrained(args.ProtGP2_model_name_or_path,trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(args.ProtGPT2_model_name_or_path,trust_remote_code=True)
     model.cuda()
     tokenizer = AutoTokenizer.from_pretrained("/n/groups/marks/projects/marks_lab_and_oatml/protein_transformer/baseline_models/ProtGPT2")
 
     mapping_protein_seq_DMS = pd.read_csv(args.DMS_reference_file_path)
     list_DMS = mapping_protein_seq_DMS["DMS_id"]
     DMS_id=list_DMS[args.DMS_index]
-    print("Computing scores for: {} with ProtGP2: {}".format(DMS_id, args.ProtGP2_model_name_or_path))
+    print("Computing scores for: {} with ProtGP2: {}".format(DMS_id, args.ProtGPT2_model_name_or_path))
     DMS_file_name = mapping_protein_seq_DMS["DMS_filename"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
     target_seq = mapping_protein_seq_DMS["target_seq"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0].upper()
     

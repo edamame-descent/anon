@@ -73,11 +73,14 @@ def get_msa_prior(MSA_data_file, MSA_weight_file_name, MSA_start, MSA_end, len_t
     filter_MSA: (bool) Whether to filter out sequences with very low hamming similarity (< 0.2) to the reference sequence in the MSA (first sequence).
     verbose: (bool) Whether to print to the console processing details along the way.
     """
+    print("HERE")
     msa_data = process_msa_data(MSA_data_file)
+    print("HERE2")
     vocab_size = len(vocab.keys())
     if verbose: print("Target seq len is {}, MSA length is {}, start position is {}, end position is {} and vocab size is {}".format(len_target_seq,MSA_end-MSA_start,MSA_start,MSA_end,vocab_size))
 
     if filter_MSA:
+        print("HERE3")
         if verbose: print("Num sequences in MSA pre filtering: {}".format(len(msa_data.keys())))
         list_sequence_names = list(msa_data.keys())
         focus_sequence_name = list(msa_data.keys())[0]
@@ -90,13 +93,16 @@ def get_msa_prior(MSA_data_file, MSA_weight_file_name, MSA_start, MSA_end, len_t
         if verbose: print("Num sequences in MSA post filtering: {}".format(len(msa_data.keys())))
 
     if MSA_weight_file_name is not None:
+        print("HERE4")
         if verbose: print("Using weights in {} for sequences in MSA.".format(MSA_weight_file_name))
         assert os.path.exists(MSA_weight_file_name), "Weights file not located on disk."
+        print("HEREA")
         MSA_EVE = MSA_processing(
                 MSA_location=MSA_data_file,
                 use_weights=True,
                 weights_location=MSA_weight_file_name
         )
+        print("HEREB")
         #We scan through all sequences to see if we have a weight for them as per EVE pre-processing. We drop them otherwise.
         dropped_sequences=0
         list_sequence_names = list(msa_data.keys())
@@ -112,16 +118,26 @@ def get_msa_prior(MSA_data_file, MSA_weight_file_name, MSA_start, MSA_end, len_t
         MSA_weight = [1] *  len(list(msa_data.keys()))
 
     if retrieval_aggregation_mode=="aggregate_substitution" or retrieval_aggregation_mode=="aggregate_indel":
+        print("HERE5")
         one_hots = get_one_hot_sequences_dict(msa_data,MSA_start,MSA_end,vocab)
+        print("HERE6")
         MSA_weight = np.expand_dims(np.array(MSA_weight),axis=(1,2))
+        print("HERE7")
         base_rate = 1e-5
         base_rates = np.ones_like(one_hots) * base_rate
+        print("HERE8")
         weighted_one_hots = (one_hots + base_rates) * MSA_weight
+        print("HERE9")
         MSA_weight_norm_counts = weighted_one_hots.sum(axis=-1).sum(axis=0)
+        print("HERE10")
         MSA_weight_norm_counts = np.tile(MSA_weight_norm_counts.reshape(-1,1), (1,vocab_size))
+        print("HERE11")
         one_hots_avg = weighted_one_hots.sum(axis=0) / MSA_weight_norm_counts
+        print("HERE12")
         msa_prior = np.zeros((len_target_seq,vocab_size))
+        print("HERE13")
         msa_prior[MSA_start:MSA_end,:]=one_hots_avg
+        print("HERE14")
     else:
         msa_prior = np.ones((len_target_seq,vocab_size)) / vocab_size
     
@@ -256,6 +272,7 @@ class MSA_processing:
         
         ## MSA pre-processing to remove inadequate columns and sequences
         if self.preprocess_MSA:
+            print("HEREC")
             msa_df = pd.DataFrame.from_dict(self.seq_name_to_sequence, orient='index', columns=['sequence'])
             # Data clean up
             msa_df.sequence = msa_df.sequence.apply(lambda x: x.replace(".","-")).apply(lambda x: ''.join([aa.upper() for aa in x]))
@@ -281,6 +298,7 @@ class MSA_processing:
             self.seq_name_to_sequence = defaultdict(str)
             for seq_idx in range(len(msa_df['sequence'])):
                 self.seq_name_to_sequence[msa_df.index[seq_idx]] = msa_df.sequence[seq_idx]
+        print("HERED")
 
         self.focus_seq = self.seq_name_to_sequence[self.focus_seq_name]
         self.focus_cols = [ix for ix, s in enumerate(self.focus_seq) if s == s.upper() and s!='-'] 

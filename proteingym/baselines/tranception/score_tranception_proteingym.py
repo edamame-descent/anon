@@ -107,10 +107,12 @@ def main():
     retrieval_type = '_retrieval_' + str(args.retrieval_inference_weight) if args.inference_time_retrieval else '_no_retrieval'
     mutation_type = '_indels' if args.indel_mode else '_substitutions'
     mirror_type = '_no_mirror' if args.deactivate_scoring_mirror else ''
-    scoring_filename = args.output_scores_folder + os.sep + model_name + retrieval_type + mirror_type + mutation_type
-    if not os.path.isdir(scoring_filename):
-        os.mkdir(scoring_filename)
-    scoring_filename += os.sep + DMS_id + '.csv'
+    # scoring_filename = args.output_scores_folder + os.sep + model_name + retrieval_type + mirror_type + mutation_type
+    # if not os.path.isdir(scoring_filename):
+        # os.mkdir(scoring_filename)
+    # scoring_filename += os.sep + DMS_id + '.csv'
+    scoring_filename = args.output_scores_folder + os.sep + DMS_id + ".csv"
+
     
     DMS_data = pd.read_csv(args.DMS_data_folder + os.sep + DMS_file_name, low_memory=False)
     all_scores = model.score_mutants(
