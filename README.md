@@ -2,7 +2,7 @@
 
 ## Overview
 
-ProteinGym is an extensive set of Deep Mutational Scanning (DMS) assays curated to enable thorough comparisons of various mutation effect predictors indifferent regimes. It is comprised of two benchmarks: 1) a substitution benchmark which currently consists of the experimental characterisation of ∼3.3M missense variants across 209 DMS assays 2) an indel benchmark that includes ∼300k mutants across 74 DMS assays.
+ProteinGym is an extensive set of Deep Mutational Scanning (DMS) assays curated to enable thorough comparisons of various mutation effect predictors indifferent regimes. It is comprised of two benchmarks: 1) a substitution benchmark which currently consists of the experimental characterisation of ∼3.3M missense variants across 192 DMS assays 2) an indel benchmark that includes ∼300k mutants across 74 DMS assays.
 
 Each processed file in each benchmark corresponds to a single DMS assay, and contains the following variables:
 - mutant (str): describes the set of substitutions to apply on the reference sequence to obtain the mutated sequence (eg., A1P:D2N implies the amino acid 'A' at position 1 should be replaced by 'P', and 'D' at position 2 should be replaced by 'N'). Present in the the ProteinGym substitution assays only (not indels).
