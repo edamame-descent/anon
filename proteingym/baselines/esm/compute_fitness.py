@@ -24,7 +24,7 @@ sys.path.append(pg_path)  # pg_path
 from proteingym.baselines.esm import esm
 from esm import Alphabet, FastaBatchedDataset, ProteinBertModel, pretrained, MSATransformer
 
-from proteingym.utils.scoring_utils import get_optimal_window
+from proteingym.utils.scoring_utils import get_optimal_window, set_mutant_offset, undo_mutant_offset
 from proteingym.utils.data_utils import DMS_file_cleanup
 from proteingym.utils.msa_utils import MSA_processing
 
@@ -142,7 +142,7 @@ def create_parser():
     parser.add_argument(
         "--offset-idx",
         type=int,
-        default=0,
+        default=1,
         help="Offset of the mutation positions in `--mutation-col`"
     )
     parser.add_argument(
@@ -316,18 +316,24 @@ def main(args):
                 target_seq_end_index = msa_end_index
         # else:
             # print("Model: "+args.model_type)
-        
-        df = DMS_file_cleanup(args.dms_input, target_seq=args.sequence, start_idx=target_seq_start_index, end_idx=target_seq_end_index, DMS_mutant_column=mutant_col, DMS_phenotype_name=DMS_phenotype_name)
+        # df = DMS_file_cleanup(args.dms_input, target_seq=args.sequence, start_idx=target_seq_start_index, end_idx=target_seq_end_index, DMS_mutant_column=mutant_col, DMS_phenotype_name=DMS_phenotype_name)
+        df = pd.read_csv(args.dms_input)
         args.mutation_col='mutant'
     else:
-        
+        print(f"DMS index is None, using args.dms_input as a filename directly: {args.dms_input}")
+        target_seq_start_index = args.offset_idx
         df = pd.read_csv(args.dms_input)
+    
+    if len(df) == 0:
+        raise ValueError("No rows found in the dataframe")
+    print(f"df shape: {df.shape}", flush=True)
 
     # inference for each model
     print("Starting model scoring")
     for model_location in args.model_location:
         model, alphabet = pretrained.load_model_and_alphabet(model_location)
         model_location = model_location.split("/")[-1].split(".")[0]
+        # print("Debug: Model location = "+model_location, flush=True)
         model.eval()
         if torch.cuda.is_available() and not args.nogpu:
             model = model.cuda()
@@ -402,16 +408,16 @@ def main(args):
                             left_window_probs = torch.log_softmax(model(batch_tokens[:,start_left_window:end_left_window+1].cuda())["logits"], dim=-1)
                             token_probs[:,start_left_window:end_left_window+1] += left_window_probs * weights.view(-1,1)
                             token_weights[:,start_left_window:end_left_window+1] += weights
-                            print("GIN")
-                            print(start_left_window)
-                            print(end_left_window)
+                            # print("GIN")
+                            # print(start_left_window)
+                            # print(end_left_window)
                             # Right window update
                             right_window_probs = torch.log_softmax(model(batch_tokens[:,start_right_window:end_right_window+1].cuda())["logits"], dim=-1)
-                            print(right_window_probs.shape)
-                            print(weights.shape)
-                            print(token_probs.shape)
-                            print(start_right_window)
-                            print(end_right_window)
+                            # print(right_window_probs.shape)
+                            # print(weights.shape)
+                            # print(token_probs.shape)
+                            # print(start_right_window)
+                            # print(end_right_window)
                             token_probs[:,start_right_window:end_right_window+1] += right_window_probs * weights.view(-1,1)
                             token_weights[:,start_right_window:end_right_window+1] += weights
                             if end_left_window > start_right_window:
@@ -451,8 +457,8 @@ def main(args):
                     if batch_tokens.size(1) > 1024 and args.scoring_window=="optimal": 
                         large_batch_tokens_masked=batch_tokens_masked.clone()
                         start, end = get_optimal_window(mutation_position_relative=i, seq_len_wo_special=len(args.sequence)+2, model_window=1024)
-                        print(start)
-                        print(end)
+                        # print(start)
+                        # print(end)
                         batch_tokens_masked = large_batch_tokens_masked[:,start:end]
                     elif batch_tokens.size(1) > 1024 and args.scoring_window=="overlapping": 
                         print("Overlapping not yet implemented for masked-marginals")
@@ -484,7 +490,7 @@ def main(args):
                     axis=1,
                 )
 
-    df.to_csv(args.dms_output)
+    df.to_csv(args.dms_output,index=False)
 
 
 if __name__ == "__main__":

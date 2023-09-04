@@ -84,9 +84,7 @@ def has_emb_layer_norm_before(model_state):
 
 def _load_model_and_alphabet_core_v1(model_data):
     from proteingym.baselines.esm import esm  # since esm.inverse_folding is imported below, you actually have to re-import esm here
-
     alphabet = esm.Alphabet.from_architecture(model_data["args"].arch)
-
     if model_data["args"].arch == "roberta_large":
         # upgrade state dict
         pra = lambda s: "".join(s.split("encoder_")[1:] if "encoder" in s else s)
@@ -186,7 +184,6 @@ def _load_model_and_alphabet_core_v2(model_data):
 def load_model_and_alphabet_core(model_name, model_data, regression_data=None):
     if regression_data is not None:
         model_data["model"].update(regression_data["model"])
-
     if model_name.startswith("esm2"):
         model, alphabet, model_state = _load_model_and_alphabet_core_v2(model_data)
     else:

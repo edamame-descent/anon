@@ -6,7 +6,7 @@
 from typing import Union
 import torch
 import torch.nn as nn
-
+import proteingym
 import esm
 from ..modules import ContactPredictionHead, ESM1bLayerNorm, RobertaLMHead, TransformerLayer
 
@@ -24,7 +24,7 @@ class ESM2(nn.Module):
         self.num_layers = num_layers
         self.embed_dim = embed_dim
         self.attention_heads = attention_heads
-        if not isinstance(alphabet, esm.data.Alphabet):
+        if not (isinstance(alphabet, esm.data.Alphabet) or alphabet.__class__.__name__ == "Alphabet"):
             alphabet = esm.data.Alphabet.from_architecture(alphabet)
         self.alphabet = alphabet
         self.alphabet_size = len(alphabet)
