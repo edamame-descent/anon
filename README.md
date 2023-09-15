@@ -17,14 +17,14 @@ Additionally, we provide two reference files for each benharmk that give further
 
 To download the substitution benchmark (~1.3G unzipped):
 ```
-curl -o ProteinGym_substitutions.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_substitutions.zip 
+curl -o ProteinGym_substitutions.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/ProteinGym_substitutions.zip 
 unzip ProteinGym_substitutions.zip
 rm ProteinGym_substitutions.zip
 ```
 
 Similarly, to download the indel benchmark (~212M unzipped):
 ```
-curl -o ProteinGym_indels.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_indels.zip
+curl -o ProteinGym_indels.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/ProteinGym_indels.zip
 unzip ProteinGym_indels.zip
 rm ProteinGym_indels.zip
 ```
@@ -67,13 +67,13 @@ Except for the Wavenet model (which only uses alignments to recover a set of hom
 ## Aggregated model scoring files
 The scores for all DMS assays in the ProteinGym substitution benchmark for all baselines (eg., Tranception, EVE, Wavenet, ESM-1v, MSA Transformer) may be downloaded as follows;
 ```
-curl -o scores_all_models_proteingym_substitutions.zip https://marks.hms.harvard.edu/proteingym/scores_all_models_proteingym_substitutions.zip
+curl -o scores_all_models_proteingym_substitutions.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/scores_all_models_proteingym_substitutions.zip
 unzip scores_all_models_proteingym_substitutions.zip
 rm scores_all_models_proteingym_substitutions.zip
 ```
 Similarly for the indel benchmark, all scoring files may be downloaded as follows:
 ```
-curl -o scores_all_models_proteingym_indels.zip https://marks.hms.harvard.edu/proteingym/scores_all_models_proteingym_indels.zip
+curl -o scores_all_models_proteingym_indels.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/scores_all_models_proteingym_indels.zip
 unzip scores_all_models_proteingym_indels.zip
 rm scores_all_models_proteingym_indels.zip
 ```
@@ -82,9 +82,16 @@ rm scores_all_models_proteingym_indels.zip
 
 The MSAs used to train alignment-based methods or used at inference in Tranception with retrieval and MSA Transformer may be downloaded as follows (~4.3GB unzipped):
 ```
-curl -o MSA_ProteinGym.zip https://marks.hms.harvard.edu/proteingym/MSA_ProteinGym.zip
-unzip MSA_ProteinGym.zip
-rm MSA_ProteinGym.zip
+curl -o MSA_files.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/MSA_files.zip
+unzip MSA_files.zip
+rm MSA_files.zip
+
+```
+And the redundancy-based sequence weights for the EVE, EVMutation, site-independent and Tranception models are available here:
+```
+curl -o MSA_weights.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/MSA_weights.zip
+unzip MSA_weights.zip
+rm MSA_weights.zip
 ```
 
 ## How to contribute?
