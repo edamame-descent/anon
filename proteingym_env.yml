@@ -1,11 +1,11 @@
 name: proteingym_env
 channels:
+  - conda-forge
   - pytorch
   - nvidia
-  - conda-forge
   - anaconda
-  - defaults
   - pypi
+  - defaults
 dependencies:
   - python
   - numpy

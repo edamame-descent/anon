@@ -10,8 +10,8 @@ from argparse import Namespace
 from pathlib import Path
 
 import torch
-
-from proteingym.baselines.esm import esm
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from baselines.esm import esm
 from .model.esm2 import ESM2
 
 

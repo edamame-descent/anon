@@ -5,7 +5,78 @@ import argparse
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score, matthews_corrcoef
 import warnings
+import json
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
+def minmax(x):
+    return ( (x - np.min(x)) / (np.max(x) - np.min(x)) ) 
+
+def calc_ndcg(y_true, y_score, **kwargs):
+    '''
+    Inputs:
+        y_true: an array of the true scores where higher score is better
+        y_score: an array of the predicted scores where higher score is better
+    Options:
+        quantile: If True, uses the top k quantile of the distribution
+        top: under the quantile setting this is the top quantile to
+            keep in the gains calc. This is a PERCENTAGE (i.e input 10 for top 10%)
+    Notes:
+        Currently we're calculating NDCG on the continuous value of the DMS
+        I tried it on the binary value as well and the metrics seemed mostly
+        the same.
+    '''
+    if 'quantile' not in kwargs:
+        kwargs['quantile'] = True
+    if 'top' not in kwargs:
+        kwargs['top'] = 10
+    if kwargs['quantile']:
+        k = np.floor(y_true.shape[0]*(kwargs['top']/100)).astype(int)
+    else:
+        k = kwargs['top']
+    if isinstance(y_true, pd.Series):
+        y_true = y_true.values
+    if isinstance(y_score, pd.Series):
+        y_score = y_score.values
+    gains = minmax(y_true)
+    ranks = np.argsort(np.argsort(-y_score)) + 1
+    
+    if k == 'all':
+        k = len(ranks)
+    #sub to top k
+    ranks_k = ranks[ranks <= k]
+    gains_k = gains[ranks <= k]
+    #all terms with a gain of 0 go to 0
+    ranks_fil = ranks_k[gains_k != 0]
+    gains_fil = gains_k[gains_k != 0]
+    
+    #if none of the ranks made it return 0
+    if len(ranks_fil) == 0:
+        return (0)
+    
+    #discounted cumulative gains
+    dcg = np.sum([g/np.log2(r+1) for r,g in zip(ranks_fil, gains_fil)])
+    
+    #ideal dcg - calculated based on the top k actual gains
+    ideal_ranks = np.argsort(np.argsort(-gains)) + 1
+    ideal_ranks_k = ideal_ranks[ideal_ranks <= k]
+    ideal_gains_k = gains[ideal_ranks <= k]
+    ideal_ranks_fil = ideal_ranks_k[ideal_gains_k != 0]
+    ideal_gains_fil = ideal_gains_k[ideal_gains_k != 0]
+    idcg = np.sum([g/np.log2(r+1) for r,g in zip(ideal_ranks_fil, ideal_gains_fil)])
+    
+    #normalize
+    ndcg = dcg/idcg
+    
+    return (ndcg)
+def calc_toprecall(true_scores, model_scores, top_true=10, top_model=10):
+            
+    top_true = (true_scores > np.percentile(true_scores, 100-top_true))
+    top_model = (model_scores > np.percentile(model_scores, 100-top_model))
+    
+    TP = (top_true) & (top_model)
+    recall = TP.sum() / (top_true.sum())
+    
+    return (recall)
 
 def standardization(x):
     """Assumes input is numpy array or pandas series"""
@@ -20,236 +91,145 @@ def compute_bootstrap_standard_error(df, number_assay_reshuffle=10000):
     for sample in range(number_assay_reshuffle):
         mean_performance_across_samples.append(df.sample(frac=1.0, replace=True).mean(axis=0)) #Resample a dataset of the same size (with replacement) then take the sample mean
     mean_performance_across_samples=pd.DataFrame(data=mean_performance_across_samples,columns=model_names)
-    print(mean_performance_across_samples.head())
+    # print(mean_performance_across_samples.head())
     return mean_performance_across_samples.std(ddof=1) #Unbiased estimate with ddof=1
 
+def compute_bootstrap_standard_error_functional_categories(df, number_assay_reshuffle=10000):
+    """
+    Computes the non-parametric bootstrap standard error for the mean estimate of a given performance metric (eg., Spearman, AUC) across DMS assays (ie., the sample standard deviation of the mean across bootstrap samples)
+    """
+    model_names = df.columns
+    mean_performance_across_samples = {}
+    for category, group in df.groupby("Selection Type"):
+        mean_performance_across_samples[category] = []
+        for sample in range(number_assay_reshuffle):
+            mean_performance_across_samples[category].append(group.sample(frac=1.0, replace=True).mean(axis=0)) #Resample a dataset of the same size (with replacement) then take the sample mean
+        mean_performance_across_samples[category]=pd.DataFrame(data=mean_performance_across_samples[category])
+    categories = list(mean_performance_across_samples.keys())
+    combined_averages = mean_performance_across_samples[categories[0]].copy()
+    for category in categories[1:]:
+        combined_averages += mean_performance_across_samples[category]
+    combined_averages /= len(categories)
+    # mean_performance_across_samples = mean_performance_across_samples.mean(axis=1)
+    return combined_averages.std(ddof=1) #Unbiased estimate with ddof=1
+
+
+proteingym_folder_path = os.path.dirname(os.path.realpath(__file__))
+
 def main():
-    parser = argparse.ArgumentParser(description='Tranception performance analysis')
-    parser.add_argument('--model_list', default='tranception_only', type=str, help='Whether to compute the performance of tranception only Vs all models present in input scoring files [tranception_only|all_models]')
+    parser = argparse.ArgumentParser(description='ProteinGym performance analysis')
     parser.add_argument('--input_scoring_files_folder', type=str, help='Name of folder where all input scores are present (expects one scoring file per DMS)')
     parser.add_argument('--output_performance_file_folder', default='./outputs/tranception_performance', type=str, help='Name of folder where to save performance analysis files')
     parser.add_argument('--DMS_reference_file_path', type=str, help='Reference file with list of DMSs to consider')
     parser.add_argument('--DMS_data_folder', type=str, help='Path to folder that contains all DMS datasets')
     parser.add_argument('--indel_mode', action='store_true', help='Whether to score sequences with insertions and deletions')
     parser.add_argument('--performance_by_depth', action='store_true', help='Whether to compute performance by mutation depth')
+    parser.add_argument('--config_file', default=f'{os.path.dirname(proteingym_folder_path)}/config.json', type=str, help='Path to config file containing model information')
     args = parser.parse_args()
     
     mapping_protein_seq_DMS = pd.read_csv(args.DMS_reference_file_path)
+    mapping_protein_seq_DMS["MSA_Neff_L_category"] = mapping_protein_seq_DMS["MSA_Neff_L_category"].apply(lambda x: x[0].upper() + x[1:] if type(x) == str else x)
     num_DMS=len(mapping_protein_seq_DMS)
     print("There are {} DMSs in mapping file".format(num_DMS))
-
-    if not args.indel_mode:
-        uniprot_Neff_lookup = mapping_protein_seq_DMS[['UniProt_ID','MSA_Neff_L_category']].drop_duplicates()
-        uniprot_Neff_lookup.columns=['UniProt_ID','Neff_L_category']
-        uniprot_taxon_lookup = mapping_protein_seq_DMS[['UniProt_ID','taxon']].drop_duplicates()
-        uniprot_taxon_lookup.columns=['UniProt_ID','Taxon']
-    else:
+    
+    with open(args.config_file) as f:
+        config = json.load(f)
+    with open(f"{os.path.dirname(os.path.realpath(__file__))}/constants.json") as f:
+        constants = json.load(f)
+    uniprot_function_lookup = mapping_protein_seq_DMS[["UniProt_ID","coarse_selection_type"]]
+    uniprot_function_lookup.columns = ["UniProt_ID", "Selection Type"]
+    # if not args.indel_mode:
+    uniprot_Neff_lookup = mapping_protein_seq_DMS[['UniProt_ID','MSA_Neff_L_category']].drop_duplicates()
+    uniprot_Neff_lookup.columns=['UniProt_ID','MSA_Neff_L_category']
+    uniprot_taxon_lookup = mapping_protein_seq_DMS[['UniProt_ID','taxon']].drop_duplicates()
+    uniprot_taxon_lookup.columns=['UniProt_ID','Taxon']
+    # else:
+    if args.indel_mode:
         args.performance_by_depth = False
 
-    if args.model_list=="tranception_only":
-        score_variables = ['Tranception']
-    elif args.model_list=="all_models":
-        score_file = pd.read_csv(args.input_scoring_files_folder+os.sep+mapping_protein_seq_DMS["DMS_filename"].values[0])
-        score_variables = [ x for x in score_file.columns if x not in ['DMS_score','DMS_score_bin','mutant','mutated_sequence']]
-    
+    # score_file = pd.read_csv(args.input_scoring_files_folder+os.sep+mapping_protein_seq_DMS["DMS_filename"].values[0])
+    # score_variables = [ x for x in score_file.columns if x not in ['DMS_score','DMS_score_bin','mutant','mutated_sequence']]
+    score_variables = list(config["model_list_zero_shot_substitutions_DMS"].keys()) if not args.indel_mode else list(config["model_list_zero_shot_indels_DMS"].keys())
     if not os.path.isdir(args.output_performance_file_folder):
         os.mkdir(args.output_performance_file_folder)
-        for metric in ['Spearman','AUC','MCC']:
+        for metric in ['Spearman','AUC','MCC',"NDCG","Top_recall"]:
             os.mkdir(args.output_performance_file_folder+os.sep+metric)
     
     model_types={}
-    alignment_based_models = ['EVE','DeepSequence','Wavenet','Site_Independent','EVmutation', 'GEMME']
-    for score in score_variables:
-        if any(x in score for x in alignment_based_models):
-            model_types[score]='Alignment-based model'
-        else:
-            model_types[score]='Protein language model'
-        if "MSA_Transformer" in score:
-            model_types[score]='Hybrid model'
-        if score in ['Tranception_S_retrieval','Tranception_M_retrieval','Tranception_L_retrieval','TranceptEVE_M','TranceptEVE_L','Unirep_evotune']:
-            model_types[score]='Hybrid model'
-        
-        
+    for model in score_variables:
+        model_types[model]=config["model_list_zero_shot_substitutions_DMS"][model]["model_type"] if not args.indel_mode else config["model_list_zero_shot_indels_DMS"][model]["model_type"]
+    # if all([name in score_variables for name in ['RITA_s','RITA_m','RITA_l','RITA_xl']]): 
+        # score_variables.append("RITA_ensemble")
+        # model_types["RITA_ensemble"] = "Protein language model"
+    # if all([name in score_variables for name in ['Progen2_small','Progen2_medium','Progen2_base','Progen2_large','Progen2_xlarge']]):
+        # score_variables.append("Progen2_ensemble")  
+        # model_types["Progen2_ensemble"] = "Protein language model"
     model_types=pd.DataFrame.from_dict(model_types,columns=['Model type'],orient='index')
-
-    model_details={
-        'Tranception_L_no_retrieval':'Tranception Large model (700M params) without retrieval',
-        'Tranception_S_retrieval':'Tranception Small model (85M params) with retrieval',
-        'Tranception_M_retrieval':'Tranception Medium model (300M params) with retrieval',
-        'Tranception_L_retrieval':'Tranception Large model (700M params) with retrieval',
-        'EVE_single':'EVE model (single seed)',
-        'EVE_ensemble':'EVE model (ensemble of 5 independently-trained models)',
-        'MSA_Transformer_single':'MSA Transformer (single MSA sample)',
-        'MSA_Transformer_ensemble':'MSA Transformer (ensemble of 5 MSA samples)',
-        'ESM1v_single':'ESM-1v (single seed)',
-        'ESM1v_ensemble':'ESM-1v (ensemble of 5 independently-trained models)',
-        'Wavenet':'Wavenet model',
-        'DeepSequence_single':'DeepSequence model (single seed)',
-        'DeepSequence_ensemble':'DeepSequence model (ensemble of 5 independently-trained models)',
-        'Site_Independent':'Site-Independent model',
-        'EVmutation':'EVmutation model',
-        'RITA_s':'RITA small model (85M params)',
-        'RITA_m':'RITA medium model (300M params)',
-        'RITA_l':'RITA large model (680M params)',
-        'RITA_xl':'RITA xlarge model (1.2B params)',
-        'RITA_ensemble':'Ensemble of the 4 RITA models',
-        'Progen2_small':'Progen2 small model (150M params)',
-        'Progen2_medium':'Progen2 medium model (760M params)',
-        'Progen2_base':'Progen2 base model (760M params)',
-        'Progen2_large':'Progen2 large model (2.7B params)',
-        'Progen2_xlarge':'Progen2 xlarge model (6.4B params)',
-        'Progen2_ensemble':'Ensemble of the 5 Progen2 models',
-        'Unirep':'Unirep model',
-        'Unirep_evotune':'Unirep model w/ evotuning',
-        'GEMME':'GEMME model',
-        'VESPA':'VESPA model',
-        'VESPAl':'VESPAl model',
-        'ProtGPT2':'ProtGPT2 model',
-        'ESM1b':'ESM-1b (w/ Brandes et al. extensions)',
-        'TranceptEVE_M':'TranceptEVE Medium model (Tranception Medium & retrieved EVE model)',
-        'TranceptEVE_L':'TranceptEVE Large model (Tranception Large & retrieved EVE model)'
-    }
-    model_details=pd.DataFrame.from_dict(model_details,columns=['Model details'],orient='index')
-
-    model_references={
-        'Tranception_L_no_retrieval':"<a href='https://proceedings.mlr.press/v162/notin22a.html'>Notin, P., Dias, M., Frazer, J., Marchena-Hurtado, J., Gomez, A.N., Marks, D.S., & Gal, Y. (2022). Tranception: Protein Fitness Prediction with Autoregressive Transformers and Inference-time Retrieval. ICML.</a>",
-        'Tranception_S_retrieval':"<a href='https://proceedings.mlr.press/v162/notin22a.html'>Notin, P., Dias, M., Frazer, J., Marchena-Hurtado, J., Gomez, A.N., Marks, D.S., & Gal, Y. (2022). Tranception: Protein Fitness Prediction with Autoregressive Transformers and Inference-time Retrieval. ICML.</a>",
-        'Tranception_M_retrieval':"<a href='https://proceedings.mlr.press/v162/notin22a.html'>Notin, P., Dias, M., Frazer, J., Marchena-Hurtado, J., Gomez, A.N., Marks, D.S., & Gal, Y. (2022). Tranception: Protein Fitness Prediction with Autoregressive Transformers and Inference-time Retrieval. ICML.</a>",
-        'Tranception_L_retrieval':"<a href='https://proceedings.mlr.press/v162/notin22a.html'>Notin, P., Dias, M., Frazer, J., Marchena-Hurtado, J., Gomez, A.N., Marks, D.S., & Gal, Y. (2022). Tranception: Protein Fitness Prediction with Autoregressive Transformers and Inference-time Retrieval. ICML.</a>",
-        'EVE_single':"<a href='https://www.nature.com/articles/s41586-021-04043-8'>Frazer, J., Notin, P., Dias, M., Gomez, A.N., Min, J.K., Brock, K.P., Gal, Y., & Marks, D.S. (2021). Disease variant prediction with deep generative models of evolutionary data. Nature.</a>",
-        'EVE_ensemble':"<a href='https://www.nature.com/articles/s41586-021-04043-8'>Frazer, J., Notin, P., Dias, M., Gomez, A.N., Min, J.K., Brock, K.P., Gal, Y., & Marks, D.S. (2021). Disease variant prediction with deep generative models of evolutionary data. Nature.</a>",
-        'MSA_Transformer_single':"<a href='http://proceedings.mlr.press/v139/rao21a.html'>Rao, R., Liu, J., Verkuil, R., Meier, J., Canny, J.F., Abbeel, P., Sercu, T., & Rives, A. (2021). MSA Transformer. ICML.</a>",
-        'MSA_Transformer_ensemble':"<a href='http://proceedings.mlr.press/v139/rao21a.html'>Rao, R., Liu, J., Verkuil, R., Meier, J., Canny, J.F., Abbeel, P., Sercu, T., & Rives, A. (2021). MSA Transformer. ICML.</a>",
-        'ESM1v_single':"<a href='https://proceedings.neurips.cc/paper/2021/hash/f51338d736f95dd42427296047067694-Abstract.html'>Meier, J., Rao, R., Verkuil, R., Liu, J., Sercu, T., & Rives, A. (2021). Language models enable zero-shot prediction of the effects of mutations on protein function. NeurIPS.</a>",
-        'ESM1v_ensemble':"<a href='https://proceedings.neurips.cc/paper/2021/hash/f51338d736f95dd42427296047067694-Abstract.html'>Meier, J., Rao, R., Verkuil, R., Liu, J., Sercu, T., & Rives, A. (2021). Language models enable zero-shot prediction of the effects of mutations on protein function. NeurIPS.</a>",
-        'Wavenet':"<a href='https://www.nature.com/articles/s41467-021-22732-w'>Shin, J., Riesselman, A.J., Kollasch, A.W., McMahon, C., Simon, E., Sander, C., Manglik, A., Kruse, A.C., & Marks, D.S. (2021). Protein design and variant prediction using autoregressive generative models. Nature Communications, 12.</a>",
-        'DeepSequence_single':"<a href='https://www.nature.com/articles/s41592-018-0138-4'>Riesselman, A.J., Ingraham, J., & Marks, D.S. (2018). Deep generative models of genetic variation capture the effects of mutations. Nature Methods, 15, 816-822.</a>",
-        'DeepSequence_ensemble':"<a href='https://www.nature.com/articles/s41592-018-0138-4'>Riesselman, A.J., Ingraham, J., & Marks, D.S. (2018). Deep generative models of genetic variation capture the effects of mutations. Nature Methods, 15, 816-822.</a>",
-        'Site_Independent':"<a href='https://www.nature.com/articles/nbt.3769'>Hopf, T.A., Ingraham, J., Poelwijk, F.J., Schärfe, C.P., Springer, M., Sander, C., & Marks, D.S. (2017). Mutation effects predicted from sequence co-variation. Nature Biotechnology, 35, 128-135.</a>",
-        'EVmutation':"<a href='https://www.nature.com/articles/nbt.3769'>Hopf, T.A., Ingraham, J., Poelwijk, F.J., Schärfe, C.P., Springer, M., Sander, C., & Marks, D.S. (2017). Mutation effects predicted from sequence co-variation. Nature Biotechnology, 35, 128-135.</a>",
-        'RITA_s':"<a href='https://arxiv.org/abs/2205.05789'>Hesslow, D., Zanichelli, N., Notin, P., Poli, I., & Marks, D.S. (2022). RITA: a Study on Scaling Up Generative Protein Sequence Models. ArXiv, abs/2205.05789.</a>",
-        'RITA_m':"<a href='https://arxiv.org/abs/2205.05789'>Hesslow, D., Zanichelli, N., Notin, P., Poli, I., & Marks, D.S. (2022). RITA: a Study on Scaling Up Generative Protein Sequence Models. ArXiv, abs/2205.05789.</a>",
-        'RITA_l':"<a href='https://arxiv.org/abs/2205.05789'>Hesslow, D., Zanichelli, N., Notin, P., Poli, I., & Marks, D.S. (2022). RITA: a Study on Scaling Up Generative Protein Sequence Models. ArXiv, abs/2205.05789.</a>",
-        'RITA_xl':"<a href='https://arxiv.org/abs/2205.05789'>Hesslow, D., Zanichelli, N., Notin, P., Poli, I., & Marks, D.S. (2022). RITA: a Study on Scaling Up Generative Protein Sequence Models. ArXiv, abs/2205.05789.</a>",
-        'RITA_ensemble':"<a href='https://arxiv.org/abs/2205.05789'>Hesslow, D., Zanichelli, N., Notin, P., Poli, I., & Marks, D.S. (2022). RITA: a Study on Scaling Up Generative Protein Sequence Models. ArXiv, abs/2205.05789.</a>",
-        'Progen2_small':"<a href='https://arxiv.org/abs/2206.13517'> Nijkamp, E., Ruffolo, J.A., Weinstein, E.N., Naik, N., & Madani, A. (2022). ProGen2: Exploring the Boundaries of Protein Language Models. ArXiv, abs/2206.13517. </a>",
-        'Progen2_medium':"<a href='https://arxiv.org/abs/2206.13517'> Nijkamp, E., Ruffolo, J.A., Weinstein, E.N., Naik, N., & Madani, A. (2022). ProGen2: Exploring the Boundaries of Protein Language Models. ArXiv, abs/2206.13517. </a>",
-        'Progen2_base':"<a href='https://arxiv.org/abs/2206.13517'> Nijkamp, E., Ruffolo, J.A., Weinstein, E.N., Naik, N., & Madani, A. (2022). ProGen2: Exploring the Boundaries of Protein Language Models. ArXiv, abs/2206.13517. </a>",
-        'Progen2_large':"<a href='https://arxiv.org/abs/2206.13517'> Nijkamp, E., Ruffolo, J.A., Weinstein, E.N., Naik, N., & Madani, A. (2022). ProGen2: Exploring the Boundaries of Protein Language Models. ArXiv, abs/2206.13517. </a>",
-        'Progen2_xlarge':"<a href='https://arxiv.org/abs/2206.13517'> Nijkamp, E., Ruffolo, J.A., Weinstein, E.N., Naik, N., & Madani, A. (2022). ProGen2: Exploring the Boundaries of Protein Language Models. ArXiv, abs/2206.13517. </a>",
-        'Progen2_ensemble':"<a href='https://arxiv.org/abs/2206.13517'> Nijkamp, E., Ruffolo, J.A., Weinstein, E.N., Naik, N., & Madani, A. (2022). ProGen2: Exploring the Boundaries of Protein Language Models. ArXiv, abs/2206.13517. </a>",
-        'Unirep':"<a href='https://www.nature.com/articles/s41592-019-0598-1'>Alley, E.C., Khimulya, G., Biswas, S., AlQuraishi, M., & Church, G.M. (2019). Unified rational protein engineering with sequence-based deep representation learning. Nature Methods, 1-8.</a>",
-        'Unirep_evotune':"<a href='https://www.nature.com/articles/s41592-019-0598-1'>Alley, E.C., Khimulya, G., Biswas, S., AlQuraishi, M., & Church, G.M. (2019). Unified rational protein engineering with sequence-based deep representation learning. Nature Methods, 1-8.</a>",
-        'GEMME':"<a href='https://pubmed.ncbi.nlm.nih.gov/31406981/'>Laine, É., Karami, Y., & Carbone, A. (2019). GEMME: A Simple and Fast Global Epistatic Model Predicting Mutational Effects. Molecular Biology and Evolution, 36, 2604 - 2619.</a>",
-        'ProtGPT2':"<a href='https://www.nature.com/articles/s41467-022-32007-7'>Ferruz, N., Schmidt, S., & Höcker, B. (2022). ProtGPT2 is a deep unsupervised language model for protein design. Nature Communications, 13.</a>",
-        'VESPA':"<a href='https://link.springer.com/article/10.1007/s00439-021-02411-y'>Marquet, C., Heinzinger, M., Olenyi, T., Dallago, C., Bernhofer, M., Erckert, K., & Rost, B. (2021). Embeddings from protein language models predict conservation and variant effects. Human Genetics, 141, 1629 - 1647.</a>",
-        'VESPAl':"<a href='https://link.springer.com/article/10.1007/s00439-021-02411-y'>Marquet, C., Heinzinger, M., Olenyi, T., Dallago, C., Bernhofer, M., Erckert, K., & Rost, B. (2021). Embeddings from protein language models predict conservation and variant effects. Human Genetics, 141, 1629 - 1647.</a>",
-        'ESM1b':"[1] Original model: <a href='https://www.biorxiv.org/content/10.1101/622803v4'>Rives, A., Goyal, S., Meier, J., Guo, D., Ott, M., Zitnick, C.L., Ma, J., & Fergus, R. (2019). Biological structure and function emerge from scaling unsupervised learning to 250 million protein sequences. Proceedings of the National Academy of Sciences of the United States of America, 118.</a> [2] Extensions: <a href='https://www.biorxiv.org/content/10.1101/2022.08.25.505311v1'>Brandes, N., Goldman, G., Wang, C.H., Ye, C.J., & Ntranos, V. (2022). Genome-wide prediction of disease variants with a deep protein language model. bioRxiv.</a>",
-        'TranceptEVE_M':"<a href='https://www.biorxiv.org/content/10.1101/2022.12.07.519495v1?rss=1'>Notin, P., Van Niekerk, L., Kollasch, A., Ritter, D., Gal, Y. & Marks, D.S. &  (2022). TranceptEVE: Combining Family-specific and Family-agnostic Models of Protein Sequences for Improved Fitness Prediction. NeurIPS, LMRL workshop.</a>",
-        'TranceptEVE_L':"<a href='https://www.biorxiv.org/content/10.1101/2022.12.07.519495v1?rss=1'>Notin, P., Van Niekerk, L., Kollasch, A., Ritter, D., Gal, Y. & Marks, D.S. &  (2022). TranceptEVE: Combining Family-specific and Family-agnostic Models of Protein Sequences for Improved Fitness Prediction. NeurIPS, LMRL workshop.</a>"
-    }
-    model_references=pd.DataFrame.from_dict(model_references,columns=['References'],orient='index')
-
-    clean_names={
-        'Tranception_L_no_retrieval':'Tranception L no retrieval',
-        'Tranception_S_retrieval':'Tranception S',
-        'Tranception_M_retrieval':'Tranception M',
-        'Tranception_L_retrieval':'Tranception L',
-        'EVE_single':'EVE (single)',
-        'EVE_ensemble':'EVE (ensemble)',
-        'MSA_Transformer_single':'MSA Transformer (single)',
-        'MSA_Transformer_ensemble':'MSA Transformer (ensemble)',
-        'ESM1v_single':'ESM-1v (single)',
-        'ESM1v_ensemble':'ESM-1v (ensemble)',
-        'Wavenet':'Wavenet',
-        'DeepSequence_single':'DeepSequence (single)',
-        'DeepSequence_ensemble':'DeepSequence (ensemble)',
-        'Site_Independent':'Site-Independent',
-        'EVmutation':'EVmutation',
-        'RITA_s':'RITA S',
-        'RITA_m':'RITA M',
-        'RITA_l':'RITA L',
-        'RITA_xl':'RITA XL',
-        'RITA_ensemble':'RITA (ensemble)',
-        'Progen2_small':'Progen2 S',
-        'Progen2_medium':'Progen2 M',
-        'Progen2_base':'Progen2 Base',
-        'Progen2_large':'Progen2 L',
-        'Progen2_xlarge':'Progen2 XL',
-        'Progen2_ensemble':'Progen2 (ensemble)',
-        'Unirep':'Unirep',
-        'Unirep_evotune':'Unirep evotuned',
-        'GEMME':'GEMME',
-        'ProtGPT2':'ProtGPT2',
-        'VESPA':'VESPA',
-        'VESPAl':'VESPAl',
-        'ESM1b': 'ESM-1b',
-        'TranceptEVE_M':'TranceptEVE M',
-        'TranceptEVE_L':'TranceptEVE L'
-    }
-
+    model_details=pd.DataFrame.from_dict(constants["model_details"],columns=['Model details'],orient='index')
+    model_references=pd.DataFrame.from_dict(constants["model_references"],columns=['References'],orient='index')
+    clean_names = constants["clean_names"]
     performance_all_DMS={}
     output_filename={}
-    for metric in ['Spearman','AUC','MCC']:
+    for metric in ['Spearman','AUC','MCC', "NDCG", "Top_recall"]:
         performance_all_DMS[metric]={}
         mutation_type = "substitutions" if not args.indel_mode else "indels"
-        output_filename[metric]=args.model_list+"_"+mutation_type+"_"+metric
+        output_filename[metric]="DMS_" + mutation_type + "_" + metric
         for i, score in enumerate(score_variables):
             performance_all_DMS[metric][score]=i
             if not args.indel_mode and args.performance_by_depth:
                 for depth in ['1','2','3','4','5+']:
                     performance_all_DMS[metric][score+'_'+depth] = i
         performance_all_DMS[metric]['number_mutants']=-1
-        if not args.indel_mode:
-            performance_all_DMS[metric]['UniProt_ID']=-1
-            performance_all_DMS[metric]['Neff_L_category']=-1
-            performance_all_DMS[metric]['Taxon']=-1
+        performance_all_DMS[metric]["Selection Type"] = -1 
+        performance_all_DMS[metric]["UniProt_ID"] = -1 
+        performance_all_DMS[metric]['MSA_Neff_L_category']=-1
+        performance_all_DMS[metric]['Taxon']=-1
         performance_all_DMS[metric]=pd.DataFrame.from_dict(performance_all_DMS[metric],orient='index').reset_index()
         performance_all_DMS[metric].columns=['score','score_index']
 
     list_DMS = mapping_protein_seq_DMS["DMS_id"]
-
+    i = 0
     for DMS_id in list_DMS:
         try:
             print(DMS_id)    
             UniProt_ID = mapping_protein_seq_DMS["UniProt_ID"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
-            DMS_binarization_cutoff_ProteinGym = mapping_protein_seq_DMS["DMS_binarization_cutoff"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
             DMS_filename = mapping_protein_seq_DMS["DMS_filename"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
-            if not args.indel_mode:
-                Neff_L_category	= mapping_protein_seq_DMS["MSA_Neff_L_category"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
-                Taxon = mapping_protein_seq_DMS["taxon"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
+            selection_type = mapping_protein_seq_DMS["coarse_selection_type"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
+            # if not args.indel_mode:
+            MSA_Neff_L_category	= mapping_protein_seq_DMS["MSA_Neff_L_category"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
+            Taxon = mapping_protein_seq_DMS["taxon"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
 
             DMS_file = pd.read_csv(args.DMS_data_folder+os.sep+DMS_filename)
             print("Length DMS: {}".format(len(DMS_file)))
-
-            if args.model_list=="tranception_only":
-                tranception = pd.read_csv(args.input_scoring_files_folder + os.sep + DMS_id + ".csv")
-                tranception = tranception[['mutated_sequence','avg_score']]
-                tranception.columns=['mutated_sequence','Tranception']    
-                merged_scores = pd.merge(DMS_file, tranception, on='mutated_sequence', how='inner')
-                merged_scores.dropna(inplace=True)
-            elif args.model_list=="all_models":
-                merged_scores = pd.read_csv(args.input_scoring_files_folder + os.sep + DMS_id + ".csv") #We assume no missing value (all models were enforced to score all mutants)
+            merged_scores = pd.read_csv(args.input_scoring_files_folder + os.sep + DMS_id + ".csv") #We assume no missing value (all models were enforced to score all mutants)
             if 'mutant' not in merged_scores: merged_scores['mutant'] = merged_scores['mutated_sequence'] #if mutant not in DMS file we default to mutated_sequence (eg., for indels)
         except:
-            print("At least one scoring file missing")
+            print(f"Scoring file for {DMS_id} missing")
             continue
-        
-        ##if 'DMS_score_bin' not in merged_scores: merged_scores['DMS_score_bin'] = merged_scores['DMS_score'] > DMS_binarization_cutoff_ProteinGym
 
         if not args.indel_mode and args.performance_by_depth:
             merged_scores['mutation_depth']=merged_scores['mutant'].apply(lambda x: len(x.split(":")))
             merged_scores['mutation_depth_grouped']=merged_scores['mutation_depth'].apply(lambda x: '5+' if x >=5 else str(x))
         performance_DMS = {}
-        for metric in ['Spearman','AUC','MCC']:
+        for metric in ['Spearman','AUC','MCC','NDCG','Top_recall']:
             performance_DMS[metric]={}
         for score in score_variables:
+            if score not in merged_scores:
+                print("Model scores for {} not in merged scores for DMS {}".format(score,DMS_id))
+                performance_DMS["Spearman"][score] = np.nan
+                performance_DMS["AUC"][score] = np.nan
+                performance_DMS["MCC"][score] = np.nan
+                performance_DMS["NDCG"][score] = np.nan 
+                performance_DMS["Top_recall"][score] = np.nan
+                continue
             performance_DMS['Spearman'][score] = spearmanr(merged_scores['DMS_score'], merged_scores[score])[0]
+            performance_DMS["NDCG"][score] = calc_ndcg(merged_scores['DMS_score'], merged_scores[score])
+            performance_DMS["Top_recall"][score] = calc_toprecall(merged_scores['DMS_score'], merged_scores[score])
             try:
-            #if True:
+            # if True:
                 performance_DMS['AUC'][score] = roc_auc_score(y_true=merged_scores['DMS_score_bin'], y_score=merged_scores[score])
             except:
-            #else:
+            # else:
                 print("AUC issue with: {} for model: {}".format(DMS_id,score))
                 performance_DMS['AUC'][score] = np.nan
             try:
@@ -259,13 +239,24 @@ def main():
             except:
                 print("MCC issue with: {} for model: {}".format(DMS_id,score))
                 performance_DMS['MCC'][score] = np.nan
-        
+
         if not args.indel_mode and args.performance_by_depth:
             for score in score_variables:
+                if score not in merged_scores:
+                    print("Model scores for {} not in merged scores for DMS {}".format(score,DMS_id))
+                    for depth in ['1','2','3','4','5+']:
+                        performance_DMS["Spearman"][score+'_'+depth] = np.nan
+                        performance_DMS["AUC"][score+'_'+depth] = np.nan
+                        performance_DMS["MCC"][score+'_'+depth] = np.nan 
+                        performance_DMS["NDCG"][score+'_'+depth] = np.nan
+                        performance_DMS["Top_recall"][score+'_'+depth] = np.nan
+                    continue
                 for depth in ['1','2','3','4','5+']:
                     merged_scores_depth = merged_scores[merged_scores.mutation_depth_grouped==depth]
                     if len(merged_scores_depth) > 0:
                         performance_DMS['Spearman'][score+'_'+depth] = spearmanr(merged_scores_depth['DMS_score'], merged_scores_depth[score])[0]
+                        performance_DMS["NDCG"][score+'_'+depth] = calc_ndcg(merged_scores_depth['DMS_score'], merged_scores_depth[score])
+                        performance_DMS["Top_recall"][score+'_'+depth] = calc_toprecall(merged_scores_depth['DMS_score'], merged_scores_depth[score])
                         try:
                             performance_DMS['AUC'][score+'_'+depth] = roc_auc_score(y_true=merged_scores_depth['DMS_score_bin'], y_score=merged_scores_depth[score])
                         except:
@@ -278,33 +269,35 @@ def main():
                         performance_DMS['Spearman'][score+'_'+depth] = np.nan
                         performance_DMS['AUC'][score+'_'+depth] = np.nan
                         performance_DMS['MCC'][score+'_'+depth] = np.nan
-
+                        performance_DMS["NDCG"][score+'_'+depth] = np.nan
+                        performance_DMS["Top_recall"][score+'_'+depth] = np.nan
         print("Number of mutants: {}".format(len(merged_scores['DMS_score'].values)))
-        for metric in ['Spearman','AUC','MCC']:
+        for metric in ['Spearman','AUC','MCC','NDCG','Top_recall']:
             performance_DMS[metric]['number_mutants']=len(merged_scores['DMS_score'].values)
-            if not args.indel_mode:
-                performance_DMS[metric]['UniProt_ID'] = UniProt_ID
-                performance_DMS[metric]['Neff_L_category'] = Neff_L_category
-                performance_DMS[metric]['Taxon'] = Taxon
+            performance_DMS[metric]['UniProt_ID'] = UniProt_ID
+            performance_DMS[metric]["Selection Type"] = selection_type
+            # if not args.indel_mode:
+            performance_DMS[metric]['MSA_Neff_L_category'] = MSA_Neff_L_category
+            performance_DMS[metric]['Taxon'] = Taxon
             performance_DMS[metric] = pd.DataFrame.from_dict(performance_DMS[metric],orient='index').reset_index()
             performance_DMS[metric].columns=['score',DMS_id]
-        
             performance_all_DMS[metric]=pd.merge(performance_all_DMS[metric],performance_DMS[metric],on='score',how='left')
-    
-    for metric in ['Spearman','AUC','MCC']:
+        # if i > 40:
+        #     break  
+        # else: 
+        #     i += 1
+    for metric in ['Spearman','AUC','MCC','NDCG','Top_recall']:
         performance_all_DMS[metric]=performance_all_DMS[metric].set_index('score')
         del performance_all_DMS[metric]['score_index']
         performance_all_DMS[metric]=performance_all_DMS[metric].transpose()
-        if args.indel_mode:
-            if args.model_list=="all_models": 
-                bootstrap_standard_error = pd.DataFrame(compute_bootstrap_standard_error(performance_all_DMS[metric].subtract(performance_all_DMS[metric]['TranceptEVE_M'],axis=0)),columns=["Bootstrap_standard_error_"+metric])
-            performance_all_DMS[metric].loc['Average'] = performance_all_DMS[metric].mean() #DMS-level average = Uniprot-level average for indels
+        # if args.indel_mode:
+            # bootstrap_standard_error = pd.DataFrame(compute_bootstrap_standard_error(performance_all_DMS[metric].subtract(performance_all_DMS[metric]['TranceptEVE_M'],axis=0)),columns=["Bootstrap_standard_error_"+metric])
+            # performance_all_DMS[metric].loc['Average'] = performance_all_DMS[metric].mean() #DMS-level average = Uniprot-level average for indels
         for var in performance_all_DMS[metric]:
-            if var not in ['UniProt_ID','Neff_L_category','Taxon']:
+            if var not in ['UniProt_ID','MSA_Neff_L_category','Taxon',"Selection Type"]:
                 performance_all_DMS[metric][var]=performance_all_DMS[metric][var].astype(float).round(3)
             if var in ['number_mutants']:
                 performance_all_DMS[metric][var]=performance_all_DMS[metric][var].astype(int)
-        performance_all_DMS[metric].to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_DMS_level.csv')
         if not args.indel_mode and args.performance_by_depth:
             all_columns = performance_all_DMS[metric].columns
             performance_all_DMS_html=performance_all_DMS[metric].copy()
@@ -312,73 +305,129 @@ def main():
             all_not_depth_columns = all_columns[[all_columns[x].split("_")[-1] not in ['1','2','3','4','5+'] for x in range(len(all_columns))]]
             all_not_depth_columns_clean = all_not_depth_columns.map(lambda x: clean_names[x] if x in clean_names else x)
             performance_all_DMS_html[all_not_depth_columns_clean].to_html(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_DMS_level.html')
+            DMS_perf_to_save = performance_all_DMS[metric].copy()[all_not_depth_columns]
+            DMS_perf_to_save.columns = DMS_perf_to_save.columns.map(lambda x: clean_names[x] if x in clean_names else x)
+            DMS_perf_to_save.to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_DMS_level.csv', index_label="DMS ID")
         else:
             performance_all_DMS_html=performance_all_DMS[metric].copy()
             performance_all_DMS_html.columns = performance_all_DMS_html.columns.map(lambda x: clean_names[x] if x in clean_names else x)
             performance_all_DMS_html.to_html(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_DMS_level.html')
+            DMS_perf_to_save = performance_all_DMS[metric].copy()
+            DMS_perf_to_save.columns = DMS_perf_to_save.columns.map(lambda x: clean_names[x] if x in clean_names else x)
+            DMS_perf_to_save.to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_DMS_level.csv', index_label="DMS ID")
         
         if not args.indel_mode:
             uniprot_metric_performance = performance_all_DMS[metric].groupby(['UniProt_ID']).mean()
-            if args.model_list=="all_models": 
-                bootstrap_standard_error = pd.DataFrame(compute_bootstrap_standard_error(uniprot_metric_performance.subtract(uniprot_metric_performance['TranceptEVE_L'],axis=0)),columns=["Bootstrap_standard_error_"+metric])
+            uniprot_function_metric_performance = performance_all_DMS[metric].groupby(['UniProt_ID',"Selection Type"]).mean()
             uniprot_metric_performance = uniprot_metric_performance.reset_index()
             uniprot_metric_performance = pd.merge(uniprot_metric_performance,uniprot_Neff_lookup,on='UniProt_ID', how='left')
             uniprot_metric_performance = pd.merge(uniprot_metric_performance,uniprot_taxon_lookup,on='UniProt_ID', how='left')
+            uniprot_metric_performance = pd.merge(uniprot_metric_performance,uniprot_function_lookup,on="UniProt_ID",how="left")
             del uniprot_metric_performance['number_mutants']
             uniprot_level_average = uniprot_metric_performance.mean()
+            uniprot_function_level_average = uniprot_function_metric_performance.groupby("Selection Type").mean()
+            bootstrap_standard_error = pd.DataFrame(compute_bootstrap_standard_error_functional_categories(uniprot_function_metric_performance.subtract(uniprot_function_metric_performance['TranceptEVE_L'],axis=0)),columns=["Bootstrap_standard_error_"+metric])
+            # bootstrap_standard_error = pd.DataFrame(compute_bootstrap_standard_error(uniprot_function_level_average.subtract(uniprot_function_level_average['TranceptEVE_L'],axis=0)),columns=["Bootstrap_standard_error_"+metric])
+            uniprot_function_level_average = uniprot_function_level_average.reset_index()
+            final_average = uniprot_function_level_average.mean() 
             uniprot_metric_performance.loc['Average'] = uniprot_level_average
+            uniprot_function_level_average.loc['Average'] = final_average
             uniprot_metric_performance=uniprot_metric_performance.round(3)
-            uniprot_metric_performance.to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_Uniprot_level.csv', index=False)
-            
+            uniprot_function_level_average=uniprot_function_level_average.round(3)
+            # uniprot_function_level_average.to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + "_Uniprot_Selection_Type_level.csv",index=False)
+            # uniprot_metric_performance.to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_Uniprot_level.csv', index=False)
             if args.performance_by_depth:
+                uniprot_metric_performance[[column for column in all_not_depth_columns if column != "number_mutants"]].to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_Uniprot_level.csv', index=False)
                 performance_by_depth = {}
-                all_not_depth_columns = [x for x in all_not_depth_columns if x != 'number_mutants']
+                all_not_depth_columns = [x for x in all_not_depth_columns if x not in ['number_mutants',"UniProt_ID","MSA_Neff_L_category","Taxon"]]
                 for depth in ['1','2','3','4','5+']:
                     depth_columns = all_columns[[all_columns[x].split("_")[-1]==depth for x in range(len(all_columns))]]
-                    performance_by_depth[depth] = uniprot_metric_performance.loc['Average',depth_columns].transpose().reset_index()
+                    # performance_by_depth[depth] = uniprot_metric_performance.loc['Average',depth_columns].transpose().reset_index()
+                    # performance_by_depth[depth] = performance_all_DMS[metric].groupby(["UniProt_ID","Selection Type"]).mean()
+                    # performance_by_depth[depth] = uniprot_function_level_average.groupby("Selection Type")[depth_columns].mean().mean().reset_index()
+                    performance_by_depth[depth] = uniprot_function_metric_performance[depth_columns].mean().reset_index()
                     performance_by_depth[depth]['model_name'] = performance_by_depth[depth]['score'].map(lambda x: '_'.join(x.split('_')[:-1]))
-                    performance_by_depth[depth]=performance_by_depth[depth][['model_name','Average']]
+                    performance_by_depth[depth]=performance_by_depth[depth][['model_name',0]]
                     performance_by_depth[depth].columns = ['model_name','Depth_'+depth]
                     performance_by_depth[depth].set_index('model_name', inplace=True)
-                uniprot_metric_performance = uniprot_metric_performance[all_not_depth_columns]
-            performance_by_MSA_depth = uniprot_metric_performance.groupby(['Neff_L_category']).mean().transpose()
-            performance_by_MSA_depth = performance_by_MSA_depth[['low','medium','high']]
+                uniprot_function_level_average = uniprot_function_level_average[all_not_depth_columns]
+            else:
+                uniprot_metric_performance.to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + '_Uniprot_level.csv', index=False)
+            uniprot_function_level_average.to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + output_filename[metric] + "_Uniprot_Selection_Type_level.csv",index=False)
+            # performance_by_MSA_depth = uniprot_function_level_average.groupby(['MSA_Neff_L_category']).mean().transpose()
+            # performance_by_MSA_depth = performance_all_DMS[metric].groupby(["UniProt_ID", "Selection Type",'MSA_Neff_L_category']).mean().transpose()
+            if args.performance_by_depth:
+                performance_by_MSA_depth = performance_all_DMS[metric].groupby(["UniProt_ID","MSA_Neff_L_category"]).mean().groupby(["MSA_Neff_L_category"]).mean()[[col for col in all_not_depth_columns if col != "Selection Type"]].transpose()
+            else:
+                performance_by_MSA_depth = performance_all_DMS[metric].groupby(["UniProt_ID","MSA_Neff_L_category"]).mean().groupby(["MSA_Neff_L_category"]).mean().transpose()
+            performance_by_MSA_depth = performance_by_MSA_depth[['Low','Medium','High']]
             performance_by_MSA_depth.columns = ['Low_MSA_depth','Medium_MSA_depth','High_MSA_depth']
-            performance_by_taxon = uniprot_metric_performance.groupby(['Taxon']).mean().transpose()
+            if args.performance_by_depth:
+                performance_by_taxon = performance_all_DMS[metric].groupby(["UniProt_ID","Taxon"]).mean().groupby(["Taxon"]).mean()[[col for col in all_not_depth_columns if col != "Selection Type"]].transpose()
+            else:
+                performance_by_taxon = performance_all_DMS[metric].groupby(["UniProt_ID","Taxon"]).mean().groupby(["Taxon"]).mean().transpose()
             performance_by_taxon = performance_by_taxon[['Human','Eukaryote','Prokaryote','Virus']]
-            performance_by_taxon.columns = ['Human','Other Eukaryote','Prokaryote','Virus']
+            performance_by_taxon.columns = ['Taxa_Human','Taxa_Other_Eukaryote','Taxa_Prokaryote','Taxa_Virus']
+            performance_by_function = uniprot_function_level_average.drop(labels="Average",axis=0).set_index("Selection Type").transpose()
+            performance_by_function.columns = ["Function_"+x for x in performance_by_function.columns]
             
-            summary_performance = pd.merge(pd.DataFrame(uniprot_level_average,columns=['Average_'+metric]), performance_by_MSA_depth,left_index=True, right_index=True,how='inner')
+            summary_performance = pd.merge(pd.DataFrame(final_average,columns=['Average_'+metric]), performance_by_MSA_depth,left_index=True, right_index=True,how='inner')
+            # summary_performance = pd.merge(summary_performance,pd.DataFrame(uniprot_level_average,columns=['UniProt_level_Average_'+metric]),left_index=True,right_index=True,how='inner')
             summary_performance = pd.merge(summary_performance, performance_by_taxon,left_index=True, right_index=True,how='inner')
+            summary_performance = pd.merge(summary_performance, performance_by_function,left_index=True, right_index=True, how='inner')
             if args.performance_by_depth:
                 for depth in ['1','2','3','4','5+']:
                     summary_performance = pd.merge(summary_performance, performance_by_depth[depth],left_index=True, right_index=True,how='inner')
-            if args.model_list=="all_models": 
-                final_column_order = ['Model_name','Model type','Average_'+metric,'Bootstrap_standard_error_'+metric,'Low_MSA_depth','Medium_MSA_depth','High_MSA_depth','Human','Other Eukaryote','Prokaryote','Virus','Depth_1','Depth_2','Depth_3','Depth_4','Depth_5+','Model details','References']
-            else:
-                final_column_order = ['Model_name','Model type','Average_'+metric,'Low_MSA_depth','Medium_MSA_depth','High_MSA_depth','Human','Other Eukaryote','Prokaryote','Virus','Depth_1','Depth_2','Depth_3','Depth_4','Depth_5+','Model details','References']
+            final_column_order = ['Model_name','Model type','Average_'+metric,'Bootstrap_standard_error_'+metric,'Function_Activity','Function_Binding','Function_Expression','Function_OrganismalFitness','Function_Stability','Low_MSA_depth','Medium_MSA_depth','High_MSA_depth','Taxa_Human','Taxa_Other_Eukaryote','Taxa_Prokaryote','Taxa_Virus','Depth_1','Depth_2','Depth_3','Depth_4','Depth_5+','Model details','References']
+
         else:
-            del performance_all_DMS[metric]['number_mutants']
-            summary_performance = pd.DataFrame(performance_all_DMS[metric].transpose().loc[:,'Average'])
-            summary_performance.columns = ['Average_'+metric]
-            if args.model_list=="all_models": 
-                final_column_order = ['Model_name','Model type','Average_'+metric,'Bootstrap_standard_error_'+metric,'Model details','References']
-            else:
-                final_column_order = ['Model_name','Model type','Average_'+metric,'Model details','References']
-        
+            # bootstrap_standard_error = pd.DataFrame(compute_bootstrap_standard_error(performance_all_DMS[metric].subtract(performance_all_DMS[metric]['TranceptEVE_M'],axis=0)),columns=["Bootstrap_standard_error_"+metric])
+            performance_all_DMS[metric].loc["Average"] = performance_all_DMS[metric].mean()
+            uniprot_metric_performance = performance_all_DMS[metric].groupby(['UniProt_ID']).mean()
+            uniprot_function_metric_performance = performance_all_DMS[metric].groupby(['UniProt_ID',"Selection Type"]).mean()
+            uniprot_metric_performance = pd.merge(uniprot_metric_performance,uniprot_function_lookup,on="UniProt_ID",how="left")
+            del uniprot_metric_performance['number_mutants']
+            uniprot_level_average = uniprot_metric_performance.mean()
+            del uniprot_function_metric_performance["number_mutants"]
+            uniprot_function_level_average = uniprot_function_metric_performance.groupby("Selection Type").mean()
+            bootstrap_standard_error = pd.DataFrame(compute_bootstrap_standard_error_functional_categories(uniprot_function_metric_performance.subtract(uniprot_function_metric_performance['TranceptEVE_M'],axis=0)),columns=["Bootstrap_standard_error_"+metric])
+            # bootstrap_standard_error = pd.DataFrame(compute_bootstrap_standard_error(uniprot_function_level_average.subtract(uniprot_function_level_average['TranceptEVE_M'],axis=0)),columns=["Bootstrap_standard_error_"+metric])
+            uniprot_function_level_average = uniprot_function_level_average.reset_index()
+            final_average = uniprot_function_level_average.mean() 
+            uniprot_metric_performance.loc['Average'] = uniprot_level_average
+            uniprot_function_level_average.loc['Average'] = final_average
+            uniprot_metric_performance=uniprot_metric_performance.round(3)
+            uniprot_function_level_average=uniprot_function_level_average.round(3)
+            
+            performance_by_MSA_depth = performance_all_DMS[metric].groupby(["UniProt_ID","MSA_Neff_L_category"]).mean().groupby(["MSA_Neff_L_category"]).mean().transpose()
+            performance_by_MSA_depth = performance_by_MSA_depth[['Low','Medium','High']]
+            performance_by_MSA_depth.columns = ['Low_MSA_depth','Medium_MSA_depth','High_MSA_depth']
+            performance_by_taxon = performance_all_DMS[metric].groupby(["UniProt_ID","Taxon"]).mean().groupby(["Taxon"]).mean().transpose()
+            performance_by_taxon = performance_by_taxon[['Human','Eukaryote','Prokaryote','Virus']]
+            performance_by_taxon.columns = ['Taxa_Human','Taxa_Other_Eukaryote','Taxa_Prokaryote','Taxa_Virus']
+            performance_by_function = uniprot_function_level_average.drop(labels="Average",axis=0).set_index("Selection Type").transpose()
+            performance_by_function.columns = ["Function_"+x for x in performance_by_function.columns]
+            
+            # del performance_all_DMS[metric]['number_mutants']
+            # summary_performance = pd.DataFrame(final_average,columns=['Average_'+metric])
+            summary_performance = pd.merge(pd.DataFrame(final_average,columns=['Average_'+metric]), performance_by_MSA_depth,left_index=True,right_index=True,how='inner')
+            summary_performance = pd.merge(summary_performance, performance_by_taxon,left_index=True, right_index=True,how='inner')
+            summary_performance = pd.merge(summary_performance, performance_by_function,left_index=True, right_index=True, how='inner')
+            # summary_performance = pd.DataFrame(performance_all_DMS[metric].transpose().loc[:,'Average'])
+            # summary_performance.columns = ['Average_'+metric]
+            # final_column_order = ['Model_name','Model type','Average_'+metric,'Bootstrap_standard_error_'+metric,'Model details','References']
+            final_column_order = ['Model_name','Model type','Average_'+metric,'Bootstrap_standard_error_'+metric,'Function_Activity','Function_Binding','Function_Expression','Function_OrganismalFitness','Function_Stability','Low_MSA_depth','Medium_MSA_depth','High_MSA_depth','Taxa_Human','Taxa_Other_Eukaryote','Taxa_Prokaryote','Taxa_Virus','Model details','References']
         summary_performance.sort_values(by='Average_'+metric,ascending=False,inplace=True)
         summary_performance.index.name = 'Model_name'
         summary_performance.reset_index(inplace=True)
         summary_performance.index = range(1,len(summary_performance)+1)
         summary_performance.index.name = 'Model_rank'
-        if args.model_list=="all_models": 
-            summary_performance = pd.merge(summary_performance, bootstrap_standard_error, left_on='Model_name', right_index=True, how='left')
+        summary_performance = pd.merge(summary_performance, bootstrap_standard_error, left_on='Model_name', right_index=True, how='left')
         summary_performance = pd.merge(summary_performance, model_types, left_on='Model_name', right_index=True, how='left')
         summary_performance = pd.merge(summary_performance, model_details, left_on='Model_name', right_index=True, how='left')
         summary_performance = pd.merge(summary_performance, model_references, left_on='Model_name', right_index=True, how='left')
         summary_performance=summary_performance.round(3)
         summary_performance['Model_name']=summary_performance['Model_name'].map(lambda x: clean_names[x] if x in clean_names else x)
-        
         summary_performance=summary_performance.reindex(columns=final_column_order)
         summary_performance.to_csv(args.output_performance_file_folder + os.sep + metric + os.sep + 'Summary_performance_'+output_filename[metric]+'.csv')
         summary_performance.to_html(args.output_performance_file_folder + os.sep + metric + os.sep + 'Summary_performance_'+output_filename[metric]+'.html',escape=False)

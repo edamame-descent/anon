@@ -16,17 +16,19 @@ import itertools
 from typing import List, Tuple
 import torch
 
-# Adjust path to import proteingym at ../.. relative to this file
-pg_path = "../.." #os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-print("Debug: Importing from "+pg_path)
-sys.path.append(pg_path)  # pg_path
+# add directory two levels above to sys.path
 
-from proteingym.baselines.esm import esm
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from baselines.esm import esm
 from esm import Alphabet, FastaBatchedDataset, ProteinBertModel, pretrained, MSATransformer
 
-from proteingym.utils.scoring_utils import get_optimal_window, set_mutant_offset, undo_mutant_offset
-from proteingym.utils.data_utils import DMS_file_cleanup
-from proteingym.utils.msa_utils import MSA_processing
+from utils.scoring_utils import get_optimal_window, set_mutant_offset, undo_mutant_offset
+from utils.data_utils import DMS_file_cleanup
+from utils.msa_utils import MSA_processing
+
+def standardization(x):
+    """Assumes input is numpy array or pandas series"""
+    return (x - x.mean()) / x.std()
 
 def read_msa(filename: str, nseq: int, sampling_strategy: str, random_seed: int, weight_filename: str, filter_msa: bool, path_to_hhfilter: str, hhfilter_min_cov=75, hhfilter_max_seq_id=100, hhfilter_min_seq_id=0) -> List[Tuple[str, str]]:
     """ Reads the first nseq sequences from an MSA file, automatically removes insertions."""
@@ -176,10 +178,11 @@ def create_parser():
         help="Folder with weights to sample MSA sequences in 'sequence-reweighting' scheme"
     )
     parser.add_argument(
-        '--seed',
+        '--seeds',
         type=int,
         default=1, 
-        help='Random seed used during training'
+        help='Random seed used during training',
+        nargs="+"
     )
     parser.add_argument(
         '--filter-msa',
@@ -215,6 +218,11 @@ def create_parser():
         type=str,
         default='optimal', 
         help='Approach to handle long sequences [optimal|overlapping]'
+    )
+    parser.add_argument(
+        '--overwrite-prior-scores',
+        action='store_true',
+        help='Whether to overwrite prior scores in the dataframe'
     )
     
     # fmt: on
@@ -286,7 +294,6 @@ def main(args):
 
         mutant_col = row["DMS_mutant_column"] if "DMS_mutant_column" in mapping_protein_seq_DMS.columns else "mutant"
         DMS_phenotype_name = row["DMS_phenotype_name"] if "DMS_phenotype_name" in mapping_protein_seq_DMS else "DMS_score"
-        #args.dms_output=str(args.dms_output)+os.sep+DMS_id+'_'+args.model_type+'_'+args.scoring_strategy+'_'+str(args.seed)+'_' + mapping_protein_seq_DMS["MSA_filename"][args.dms_index] +'_cov_'+str(args.hhfilter_min_cov)+'_max_id_'+str(args.hhfilter_max_seq_id)+'_min_id_'+str(args.hhfilter_min_seq_id)+'.csv'
         args.dms_output=str(args.dms_output)+os.sep+DMS_id+'.csv'
         
         # Warn if some values are NaN
@@ -299,7 +306,6 @@ def main(args):
         if "MSA_transformer" in args.model_type:  # model_type is a list
             # Check MSA_filename exists (might be NaN / empty)
             msa_filename = row["MSA_filename"]
-            print("Temp: MSA_filename: "+msa_filename)
             if msa_filename == "":
                 raise ValueError("No MSA found for DMS: "+str(DMS_id))
             
@@ -314,9 +320,6 @@ def main(args):
                 args.sequence = args.sequence[msa_start_index-1:msa_end_index]
                 target_seq_start_index = msa_start_index
                 target_seq_end_index = msa_end_index
-        # else:
-            # print("Model: "+args.model_type)
-        # df = DMS_file_cleanup(args.dms_input, target_seq=args.sequence, start_idx=target_seq_start_index, end_idx=target_seq_end_index, DMS_mutant_column=mutant_col, DMS_phenotype_name=DMS_phenotype_name)
         df = pd.read_csv(args.dms_input)
         args.mutation_col='mutant'
     else:
@@ -345,41 +348,54 @@ def main(args):
 
         if isinstance(model, MSATransformer):
             args.offset_idx = msa_start_index
-            data = [read_msa(filename=args.msa_path, nseq=args.msa_samples, sampling_strategy=args.msa_sampling_strategy, random_seed=args.seed, weight_filename=MSA_weight_file_name,
-                            filter_msa=args.filter_msa, hhfilter_min_cov=args.hhfilter_min_cov, hhfilter_max_seq_id=args.hhfilter_max_seq_id, hhfilter_min_seq_id=args.hhfilter_min_seq_id, path_to_hhfilter=args.path_to_hhfilter)]
-            assert (
-                args.scoring_strategy == "masked-marginals"
-            ), "MSA Transformer only supports masked marginal strategy"
-
-            batch_labels, batch_strs, batch_tokens = batch_converter(data)
-            print(f"Batch sizes: {batch_tokens.size()}")
-
-            all_token_probs = []
-            for i in tqdm(range(batch_tokens.size(2))):
-                batch_tokens_masked = batch_tokens.clone()
-                batch_tokens_masked[0, 0, i] = alphabet.mask_idx  # mask out first sequence
-                #print(batch_tokens_masked)
-                #print(batch_tokens_masked.shape) #torch.Size([1, 384, 102])
-                if batch_tokens.size(-1) > 1024: 
-                    large_batch_tokens_masked=batch_tokens_masked.clone()
-                    start, end = get_optimal_window(mutation_position_relative=i, seq_len_wo_special=len(args.sequence)+2, model_window=1024)
-                    print("Start index {} - end index {}".format(start,end))
-                    batch_tokens_masked = large_batch_tokens_masked[:,:,start:end]
+            for seed in args.seeds:
+                if os.path.exists(args.dms_output):
+                    prior_score_df = pd.read_csv(args.dms_output)
                 else:
-                    start=0
-                with torch.no_grad():
-                    token_probs = torch.log_softmax(
-                        model(batch_tokens_masked.cuda())["logits"], dim=-1
-                    )
-                all_token_probs.append(token_probs[:, 0, i-start].detach().cpu())  # vocab size
-            token_probs = torch.cat(all_token_probs, dim=0).unsqueeze(0)  # Hopefully this is on CPU
-            df[model_location] = df.apply(
-                lambda row: label_row(
-                    row[args.mutation_col], args.sequence, token_probs.detach().cpu(), alphabet, args.offset_idx
-                ),
-                axis=1,
-            )
+                    prior_score_df = None 
+                if f"{model_location}_seed{seed}" in prior_score_df.columns and not args.overwrite_prior_scores:
+                    print(f"Skipping seed {seed} as it is already in the dataframe")
+                    continue
+                data = [read_msa(filename=args.msa_path, nseq=args.msa_samples, sampling_strategy=args.msa_sampling_strategy, random_seed=args.seeds[0], weight_filename=MSA_weight_file_name,
+                                filter_msa=args.filter_msa, hhfilter_min_cov=args.hhfilter_min_cov, hhfilter_max_seq_id=args.hhfilter_max_seq_id, hhfilter_min_seq_id=args.hhfilter_min_seq_id, path_to_hhfilter=args.path_to_hhfilter)]
+                assert (
+                    args.scoring_strategy == "masked-marginals"
+                ), "MSA Transformer only supports masked marginal strategy"
 
+                batch_labels, batch_strs, batch_tokens = batch_converter(data)
+                print(f"Batch sizes: {batch_tokens.size()}")
+
+                all_token_probs = []
+                for i in tqdm(range(batch_tokens.size(2))):
+                    batch_tokens_masked = batch_tokens.clone()
+                    batch_tokens_masked[0, 0, i] = alphabet.mask_idx  # mask out first sequence
+                    if batch_tokens.size(-1) > 1024: 
+                        large_batch_tokens_masked=batch_tokens_masked.clone()
+                        start, end = get_optimal_window(mutation_position_relative=i, seq_len_wo_special=len(args.sequence)+2, model_window=1024)
+                        print("Start index {} - end index {}".format(start,end))
+                        batch_tokens_masked = large_batch_tokens_masked[:,:,start:end]
+                    else:
+                        start=0
+                    with torch.no_grad():
+                        token_probs = torch.log_softmax(
+                            model(batch_tokens_masked.cuda())["logits"], dim=-1
+                        )
+                    all_token_probs.append(token_probs[:, 0, i-start].detach().cpu())  # vocab size
+                token_probs = torch.cat(all_token_probs, dim=0).unsqueeze(0)  # Hopefully this is on CPU
+                df[f"{model_location}_seed{args.seeds[0]}"] = df.apply(
+                    lambda row: label_row(
+                        row[args.mutation_col], args.sequence, token_probs.detach().cpu(), alphabet, args.offset_idx
+                    ),
+                    axis=1,
+                )
+                if os.path.exists(args.dms_output) and not args.overwrite_prior_scores:
+                    prior_score_df = pd.read_csv(args.dms_output)
+                    assert f"{model_location}_seed{seed}" not in prior_score_df.columns, f"Column {model_location}_seed{seed} already exists in {args.dms_output}"
+                    prior_score_df = prior_score_df.merge(df[[f"{model_location}_seed{seed}","mutant"]],on="mutant")
+                    prior_score_df.to_csv(args.dms_output, index=False)
+                    df = prior_score_df 
+                else:
+                    df.to_csv(args.dms_output, index=False)
         else:
             args.offset_idx = target_seq_start_index
             data = [
@@ -408,16 +424,8 @@ def main(args):
                             left_window_probs = torch.log_softmax(model(batch_tokens[:,start_left_window:end_left_window+1].cuda())["logits"], dim=-1)
                             token_probs[:,start_left_window:end_left_window+1] += left_window_probs * weights.view(-1,1)
                             token_weights[:,start_left_window:end_left_window+1] += weights
-                            # print("GIN")
-                            # print(start_left_window)
-                            # print(end_left_window)
                             # Right window update
                             right_window_probs = torch.log_softmax(model(batch_tokens[:,start_right_window:end_right_window+1].cuda())["logits"], dim=-1)
-                            # print(right_window_probs.shape)
-                            # print(weights.shape)
-                            # print(token_probs.shape)
-                            # print(start_right_window)
-                            # print(end_right_window)
                             token_probs[:,start_right_window:end_right_window+1] += right_window_probs * weights.view(-1,1)
                             token_weights[:,start_right_window:end_right_window+1] += weights
                             if end_left_window > start_right_window:
@@ -489,7 +497,19 @@ def main(args):
                     ),
                     axis=1,
                 )
-
+    # Compute ensemble score Ensemble_ESM1v, standardizes each model score and then averages them
+    # note this assumes that all the input model checkpoints are ESM1v
+    if "ESM1v" in args.model_type:
+        df["Ensemble_ESM1v"] = 0.0
+        for model_location in args.model_location:
+            model_location = model_location.split("/")[-1].split(".")[0]
+            df["Ensemble_ESM1v"] += df[model_location]
+        df["Ensemble_ESM1v"] /= len(args.model_location)
+    elif "MSA_transformer" in args.model_type:
+        df[f"{model_location}_ensemble"] = 0.0
+        for seed in args.seeds:
+            df[f"{model_location}_ensemble"] += df[f"{model_location}_seed{seed}"]
+        df[f"{model_location}_ensemble"] /= len(args.seeds)
     df.to_csv(args.dms_output,index=False)
 
 

@@ -6,7 +6,6 @@
 from typing import Union
 import torch
 import torch.nn as nn
-import proteingym
 import esm
 from ..modules import ContactPredictionHead, ESM1bLayerNorm, RobertaLMHead, TransformerLayer
 
