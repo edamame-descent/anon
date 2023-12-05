@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import math
 import os
 import pandas as pd
-
+import uuid
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, NLLLoss
@@ -645,7 +645,7 @@ class TranceptionLMHeadModel(GPT2PreTrainedModel):
         # Model parallel
         self.model_parallel = False
         self.device_map = None
-        
+        self.clustal_hash = str(uuid.uuid4()) 
         self.retrieval_aggregation_mode = config.retrieval_aggregation_mode if hasattr(config, "retrieval_aggregation_mode") else None
         if self.retrieval_aggregation_mode is not None:
             print("Model leverages both autoregressive and retrieval inference")
@@ -757,6 +757,10 @@ class TranceptionLMHeadModel(GPT2PreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
+        # TMP Lood:
+        MSA_start_in = self.MSA_start
+        MSA_end_in = self.MSA_end
+        
         transformer_outputs = self.transformer(
             input_ids,
             past_key_values=past_key_values,
@@ -791,13 +795,12 @@ class TranceptionLMHeadModel(GPT2PreTrainedModel):
             
             if self.retrieval_aggregation_mode is not None:
                 batch_size = input_ids.size(0)
-                
                 if self.retrieval_aggregation_mode=="aggregate_indel":
                     assert batch_size==1, "Aggregate indel is only supported for batch size of 1"
                     truncated_sequence_text = mutated_sequence[0][start_slice[0]:end_slice[0]]
                     if len(truncated_sequence_text)!=shift_logits.shape[1]-1: # shift_logits only has one extra token compared to truncated_sequence_text (the BOS token)
                         print("Tokenization error -- seq length: {} and shift_logits length - 1 : {}".format(len(mutated_sequence),shift_logits.shape[1]-1))
-                    MSA_log_prior, MSA_start, MSA_end = msa_utils.update_retrieved_MSA_log_prior_indel(self, self.MSA_log_prior, self.MSA_start, self.MSA_end, mutated_sequence[0])  
+                    MSA_log_prior, MSA_start, MSA_end = msa_utils.update_retrieved_MSA_log_prior_indel(self, self.MSA_log_prior, self.MSA_start, self.MSA_end, mutated_sequence[0], self.clustal_hash) 
                 
                 elif self.retrieval_aggregation_mode=="aggregate_substitution":
                     MSA_log_prior=self.MSA_log_prior
@@ -816,6 +819,8 @@ class TranceptionLMHeadModel(GPT2PreTrainedModel):
                     
                     if max_prior_slice <= min_prior_slice:
                         print("Non overlapping region detected: min_prior_slice {} and max_prior_slice {}".format(min_prior_slice,max_prior_slice))
+                        print(f"TMP lood mutated_sequence={mutated_sequence}")
+                        print(f"TMP lood seq_index={seq_index}, shift_labels={shift_labels[seq_index]}, {input_ids=}, {return_dict=}")
                         continue
                     
                     slice_prior = MSA_log_prior[min_prior_slice:max_prior_slice,:].to(fused_shift_log_probas.device) 
@@ -834,8 +839,10 @@ class TranceptionLMHeadModel(GPT2PreTrainedModel):
                         # If a given residue colume is an added zero-column, then we overwrite prior fusion and only predict based on the autoregressive transformer inference mode.
                         inserted_retrieval_positions = [True if slice_prior[i].sum()==0 else False for i in range(len(slice_prior))]+[True] #Last True is for the end of sentence token
                         fused_shift_log_probas[:,inserted_retrieval_positions,:]=shift_log_probas[:,inserted_retrieval_positions,:]
-                    except:
+                    except Exception as e:
                         print("Error when adding zero column(s) to account for insertion mutations.")
+                        print(f"TMP lood: Exception: \n{e}")
+                        raise e
                 
                 loss_fct = NLLLoss(reduction='none')
                 loss = loss_fct(input=fused_shift_log_probas.view(-1, fused_shift_log_probas.size(-1)), target=shift_labels.view(-1)).view(fused_shift_log_probas.shape[0],fused_shift_log_probas.shape[1])
@@ -886,6 +893,12 @@ class TranceptionLMHeadModel(GPT2PreTrainedModel):
         """
         df = DMS_data.copy()
         if ('mutated_sequence' not in df) and (not indel_mode): df['mutated_sequence'] = df['mutant'].apply(lambda x: scoring_utils.get_mutated_sequence(target_seq, x))
+        
+        # Daniel R: Temporary since indel files all have a 'mutant' column containing the mutated sequence. Should probably
+        # make all of those mutated sequence columns and take this out entirely 
+        if indel_mode:
+            df["mutated_sequence"] = df["mutant"]
+        
         assert ('mutated_sequence' in df), "DMS file to score does not have mutated_sequence column"
         if 'mutant' not in df: df['mutant'] = df['mutated_sequence'] #if mutant not in DMS file we default to mutated_sequence
         #if 'DMS_score' in df: del df['DMS_score'] 
@@ -908,11 +921,15 @@ class TranceptionLMHeadModel(GPT2PreTrainedModel):
             all_scores = scores_L_to_R
             all_scores['avg_score'] = all_scores['avg_score_L_to_R']
         #By design "get_tranception_scores_mutated_sequences" drops the WT from the output. We add it back if that was one of the sequences to score in the DMS (score=0 by definition)
-        if target_seq in DMS_data.mutated_sequence.values:
+        if indel_mode:
+            mutant_column = "mutant"
+        else:
+            mutant_column = "mutated_sequence"
+        if target_seq in DMS_data[mutant_column].values:
             if scoring_mirror:
-                wt_row = pd.DataFrame([[target_seq,0,0,0]], columns=['mutated_sequence','avg_score_L_to_R','avg_score_R_to_L','avg_score'])
+                wt_row = pd.DataFrame([[target_seq,0,0,0]], columns=[mutant_column,'avg_score_L_to_R','avg_score_R_to_L','avg_score'])
             else:
-                wt_row = pd.DataFrame([[target_seq,0,0]], columns=['mutated_sequence','avg_score_L_to_R','avg_score'])
+                wt_row = pd.DataFrame([[target_seq,0,0]], columns=[mutant_column,'avg_score_L_to_R','avg_score'])
             all_scores = pd.concat([all_scores,wt_row], ignore_index=True)
         return all_scores
 

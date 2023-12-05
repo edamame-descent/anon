@@ -7,7 +7,7 @@ import pandas as pd
 import json
 import tqdm
 import pickle
-
+import uuid
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, NLLLoss
@@ -663,7 +663,8 @@ class TrancepteveLMHeadModel(GPT2PreTrainedModel):
         self.transformer = TranceptionModel(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.config = config
-
+        self.clustal_hash = str(uuid.uuid4()) 
+        self.clustal_hash_eve = str(uuid.uuid4())
         self.init_weights()
         
         self.default_model_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -988,7 +989,7 @@ class TrancepteveLMHeadModel(GPT2PreTrainedModel):
         with torch.no_grad():
             x = torch.tensor(self.focus_seq_one_hot_encoding, dtype=EVE_model.dtype).to(EVE_model.device)
             mu, log_var = EVE_model.encoder(x)
-            for _ in range(EVE_num_samples_log_proba):
+            for _ in tqdm.tqdm(range(EVE_num_samples_log_proba), desc="Sampling EVE log probabilities", mininterval=10):
                 z = EVE_model.sample_latent(mu, log_var)
                 recon_x_log += EVE_model.decoder(z)
             recon_x_log = recon_x_log / EVE_num_samples_log_proba #Average over iterations
@@ -1073,10 +1074,10 @@ class TrancepteveLMHeadModel(GPT2PreTrainedModel):
                     if len(truncated_sequence_text)!=shift_logits.shape[1]-1: # shift_logits only has one extra token compared to truncated_sequence_text (the BOS token)
                         print("Tokenization error -- seq length: {} and shift_logits length - 1 : {}".format(len(truncated_sequence_text),shift_logits.shape[1]-1))
                     try:
-                        MSA_log_prior, MSA_start, MSA_end, keep_column, new_column = msa_utils.update_retrieved_MSA_log_prior_indel(self, self.MSA_log_prior, self.MSA_start, self.MSA_end, mutated_sequence[0])
+                        MSA_log_prior, MSA_start, MSA_end, keep_column, new_column = msa_utils.update_retrieved_MSA_log_prior_indel(self, self.MSA_log_prior, self.MSA_start, self.MSA_end, mutated_sequence[0], self.clustal_hash)
                     except:
                         print("Issue processing the following sequence: {}".format(mutated_sequence[0]))
-                    if inference_time_retrieval_type == "TranceptEVE": EVE_log_prior = msa_utils.update_retrieved_MSA_log_prior_indel(self, self.EVE_log_prior, self.MSA_start, self.MSA_end, mutated_sequence[0])[0]
+                    if inference_time_retrieval_type == "TranceptEVE": EVE_log_prior = msa_utils.update_retrieved_MSA_log_prior_indel(self, self.EVE_log_prior, self.MSA_start, self.MSA_end, mutated_sequence[0], self.clustal_hash_eve)[0]
                 elif retrieval_aggregation_mode=="aggregate_substitution":
                     MSA_log_prior=self.MSA_log_prior
                     MSA_start=self.MSA_start
@@ -1204,6 +1205,8 @@ class TrancepteveLMHeadModel(GPT2PreTrainedModel):
         if self.config.MSA_recalibrate_probas: self.recalibrate_MSA_probas()
         if self.config.EVE_recalibrate_probas: self.recalibrate_EVE_probas()
         if ('mutated_sequence' not in df) and (not indel_mode): df['mutated_sequence'] = df['mutant'].apply(lambda x: scoring_utils.get_mutated_sequence(target_seq, x))
+        if indel_mode:
+            df["mutated_sequence"] = df["mutant"]
         assert ('mutated_sequence' in df), "DMS file to score does not have mutated_sequence column"
         if 'mutant' not in df: df['mutant'] = df['mutated_sequence'] #if mutant not in DMS file we default to mutated_sequence
         df = df[['mutated_sequence','mutant']]

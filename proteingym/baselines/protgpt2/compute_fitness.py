@@ -70,7 +70,6 @@ def main():
     parser.add_argument('--DMS_index', type=int, help='Index of DMS to score')
     parser.add_argument('--output_scores_folder', default=None, type=str, help='Name of folder to write model scores to')
     parser.add_argument('--indel_mode', action='store_true', help='Whether to score sequences with insertions and deletions')
-    parser.add_argument('--performance_file', default='ProtGP2.csv', type=str, help='Name of output summary performance file')
     args = parser.parse_args()
 
     model = AutoModelForCausalLM.from_pretrained(args.ProtGPT2_model_name_or_path,trust_remote_code=True)
@@ -87,20 +86,13 @@ def main():
     DMS_data = pd.read_csv(args.DMS_data_folder + os.sep + DMS_file_name, low_memory=False)
     if not args.indel_mode and 'mutated_sequence' not in DMS_data.columns:
         DMS_data['mutated_sequence'] = DMS_data['mutant'].apply(lambda x: get_mutated_sequence(target_seq, x))
-
+    if args.indel_mode:
+        DMS_data['mutated_sequence'] = DMS_data['mutant']
     model_scores = calc_fitness(model=model, prots=np.array(DMS_data['mutated_sequence']), tokenizer=tokenizer)
     
     DMS_data['ProtGPT2_score']=model_scores
     scoring_filename = args.output_scores_folder+os.sep+DMS_id+'.csv'
     DMS_data[['mutated_sequence','ProtGPT2_score','DMS_score']].to_csv(scoring_filename, index=False)
     
-    spearman, _ = spearmanr(DMS_data['ProtGPT2_score'], DMS_data['DMS_score'])
-
-    if not os.path.exists(args.performance_file) or os.stat(args.performance_file).st_size==0:
-        with open(args.performance_file,"w") as performance_file:
-            performance_file.write("DMS_id,spearman\n")    
-    with open(args.performance_file, "a") as performance_file:
-        performance_file.write(",".join([DMS_id,str(spearman)])+"\n")
-
 if __name__ == '__main__':
     main()

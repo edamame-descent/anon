@@ -12,10 +12,9 @@ import tensorflow_probability as tfp
 import numpy as np
 import pandas as pd
 import sys
-sys.path.append('../')
-
-from proteingym.baselines.unirep.utils import aa_seq_to_int, int_to_aa
-from proteingym.baselines.unirep.utils.unirep_utils import bucketbatchpad
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from baselines.unirep.utils import aa_seq_to_int, int_to_aa
+from baselines.unirep.utils.unirep_utils import bucketbatchpad
 
 # Helpers
 def tf_get_shape(tensor):

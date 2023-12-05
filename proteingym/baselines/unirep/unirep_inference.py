@@ -11,9 +11,9 @@ import pathlib
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-sys.path.append("../..")
-from proteingym.baselines.unirep.unirep import babbler1900
-from proteingym.baselines.unirep.utils import load_and_filter_seqs, save, format_batch_seqs, nonpad_len
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from baselines.unirep.unirep import babbler1900
+from baselines.unirep.utils import load_and_filter_seqs, save, format_batch_seqs, nonpad_len
 
 def run_inference(seqs, model_weight_path, output_dir, output_filename=None,
         batch_size=64, save_hidden=False):
@@ -100,9 +100,9 @@ if __name__ == '__main__':
     list_DMS = mapping["DMS_id"]
     DMS_id=list_DMS[args.DMS_index]   
     DMS_file_name = mapping["DMS_filename"][mapping["DMS_id"]==DMS_id].values[0]
-
+    MSA_file_name = mapping["MSA_filename"][mapping["DMS_id"]==DMS_id].values[0]
     if args.evotune:
-        args.model_path = args.model_path + os.sep +  DMS_file_name.split('.csv')[0]
+        args.model_path = args.model_path + os.sep +  MSA_file_name.split('.a2m')[0]
     print("Computing scores for: {} with Unirep {}".format(DMS_id, args.model_path))
 
 

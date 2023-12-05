@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from proteingym.utils import scoring_utils
+from utils.scoring_utils import get_mutated_sequence
 
 def DMS_file_cleanup(DMS_filename, target_seq, start_idx=1, end_idx=None, DMS_mutant_column='mutant', DMS_phenotype_name='score', DMS_directionality=1, AA_vocab = "ACDEFGHIKLMNPQRSTVWY"):
     """
@@ -24,7 +24,7 @@ def DMS_file_cleanup(DMS_filename, target_seq, start_idx=1, end_idx=None, DMS_mu
     DMS_data=DMS_data[['mutant','DMS_score']]
     DMS_data=DMS_data.groupby('mutant').mean().reset_index()
 
-    DMS_data['mutated_sequence'] = DMS_data['mutant'].apply(lambda x: scoring_utils.get_mutated_sequence(target_seq, x))
+    DMS_data['mutated_sequence'] = DMS_data['mutant'].apply(lambda x: get_mutated_sequence(target_seq, x))
     DMS_data=DMS_data[['mutant','mutated_sequence','DMS_score']]
     
     return DMS_data

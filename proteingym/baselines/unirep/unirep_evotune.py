@@ -14,9 +14,10 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
-sys.path.append("../..")
-from proteingym.baselines.unirep.unirep import babbler1900 as babbler
-from proteingym.baselines.unirep import utils
+# append to path the parent directory two levels up
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from baselines.unirep.unirep import babbler1900 as babbler
+from baselines.unirep import utils
 
 
 def main():
@@ -53,7 +54,10 @@ def main():
     args.num_steps = min(args.num_steps, int(65*MSA_num_seqs/args.batch_size))
     print("Training for {} steps".format(args.num_steps))
 
-    args.save_weights_dir = pathlib.Path(str(args.save_weights_dir) + os.sep + DMS_file_name.split('.csv')[0])
+    # args.save_weights_dir = pathlib.Path(str(args.save_weights_dir) + os.sep + DMS_file_name.split('.csv')[0])
+    # Now saving under MSA filename, as several assays share alignments 
+    args.save_weights_dir = pathlib.Path(str(args.save_weights_dir) + os.sep + MSA_file_name.split(".a2m")[0])
+
 
     # Load pre-trained models
     # Sync relevant weight files

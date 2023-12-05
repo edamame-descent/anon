@@ -47,3 +47,27 @@ def get_optimal_window(mutation_position_relative, seq_len_wo_special, model_win
         return [seq_len_wo_special - model_window, seq_len_wo_special]
     else:
         return [max(0,mutation_position_relative-half_model_window), min(seq_len_wo_special,mutation_position_relative+half_model_window)]
+
+def set_mutant_offset(mutant, MSA_start, mutant_delim=":"):
+    """
+    Adjusts the offset of a mutant sequence to match the MSA start and end positions
+    """
+    indiv_mutants = mutant.split(mutant_delim)
+    new_mutants = []
+    for indiv_mutant in indiv_mutants:
+        wt, pos, sub = indiv_mutant[0], int(indiv_mutant[1:-1]), indiv_mutant[-1]
+        shift_pos = pos - MSA_start + 1
+        new_mutants.append(wt + str(int(shift_pos)) + sub)
+    return mutant_delim.join(new_mutants)
+
+def undo_mutant_offset(mutant, MSA_start, mutant_delim=","):
+    """
+    Undoes the offset adjustment of a mutant sequence to match the MSA start and end positions
+    """
+    indiv_mutants = mutant.split(mutant_delim)
+    new_mutants = []
+    for indiv_mutant in indiv_mutants:
+        wt, pos, sub = indiv_mutant[0], int(indiv_mutant[1:-1]), indiv_mutant[-1]
+        shift_pos = pos + MSA_start - 1
+        new_mutants.append(wt + str(int(shift_pos)) + sub)
+    return mutant_delim.join(new_mutants)

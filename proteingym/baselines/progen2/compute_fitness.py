@@ -121,7 +121,6 @@ def main():
     parser.add_argument('--DMS_index', type=int, help='Path of DMS folder')
     parser.add_argument('--output_scores_folder', default=None, type=str, help='Name of folder to write model scores to')
     parser.add_argument('--indel_mode', action='store_true', help='Whether to score sequences with insertions and deletions')
-    parser.add_argument('--performance_file', default='Progen2_small.csv', type=str, help='Name of folder to write model scores to')
     parser.add_argument('--fp16', action='store_true', help='Whether to score sequences with half precision')
     parser.add_argument('--test', action='store_true', help='Test mode of fitness computation')
     args = parser.parse_args()
@@ -166,15 +165,6 @@ def main():
     DMS_data['Progen2_score']=model_scores
     scoring_filename = args.output_scores_folder+os.sep+DMS_id+'.csv'
     DMS_data[['mutant','Progen2_score','DMS_score']].to_csv(scoring_filename, index=False)
-    
-    DMS_data.dropna(inplace=True)
-    spearman, _ = spearmanr(DMS_data['Progen2_score'], DMS_data['DMS_score'])
-
-    if not os.path.exists(args.performance_file) or os.stat(args.performance_file).st_size==0:
-        with open(args.performance_file,"w") as performance_file:
-            performance_file.write("DMS_id,spearman\n")    
-    with open(args.performance_file, "a") as performance_file:
-        performance_file.write(",".join([DMS_id,str(spearman)])+"\n")
 
 if __name__ == '__main__':
     main()

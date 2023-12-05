@@ -51,7 +51,8 @@ def main():
     parser.add_argument('--MSA_weights_folder', default=None, type=str, help='Path to MSA weights for neighborhood scoring')
     parser.add_argument('--clustal_omega_location', default=None, type=str, help='Path to Clustal Omega (only needed with scoring indels with retrieval)')
 
-    parser.add_argument('--EVE_model_folder', nargs='*', help='Path to folder containing the EVE model(s)')
+    parser.add_argument('--EVE_model_folder', type=str, help='Path to folder containing the EVE model(s)')
+    parser.add_argument('--EVE_seeds', nargs='*', help='Seeds of the EVE model(s) to be leveraged')
     parser.add_argument('--EVE_num_samples_log_proba', default=10, type=int, help='Number of samples to compute the EVE log proba')
     parser.add_argument('--EVE_model_parameters_location', default=None, type=str, help='Path to EVE model parameters')
     parser.add_argument('--MSA_recalibrate_probas', action='store_true', help='Whether to normalize EVE & MSA log probas (matching temp. of Transformer)')
@@ -76,7 +77,7 @@ def main():
         print("Compute scores for DMS: "+str(DMS_id))
         target_seq = mapping_protein_seq_DMS["target_seq"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0].upper()
         DMS_file_name = mapping_protein_seq_DMS["DMS_filename"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
-        UniProt_ID = mapping_protein_seq_DMS["UniProt_ID"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]
+        UniProt_ID = mapping_protein_seq_DMS["UniProt_ID"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0] if "UniProt_ID" in mapping_protein_seq_DMS else "No ID"
         if args.inference_time_retrieval_type is not None:
             MSA_data_file = args.MSA_folder + os.sep + mapping_protein_seq_DMS["MSA_filename"][args.DMS_index] if args.MSA_folder is not None else None
             MSA_weight_file_name = args.MSA_weights_folder + os.sep + mapping_protein_seq_DMS["weight_file_name"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0] if args.MSA_weights_folder else None
@@ -84,7 +85,7 @@ def main():
             MSA_end = int(mapping_protein_seq_DMS["MSA_end"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0])
             MSA_threshold_sequence_frac_gaps = float(mapping_protein_seq_DMS["MSA_threshold_sequence_frac_gaps"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]) if "MSA_threshold_sequence_frac_gaps" in mapping_protein_seq_DMS else 0.5
             if args.clinvar_scoring:
-                MSA_threshold_focus_cols_frac_gaps = float(mapping_protein_seq_DMS["MSA_threshold_focus_cols_frac_gaps"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]) if "MSA_threshold_focus_cols_frac_gaps" in mapping_protein_seq_DMS else 0.3
+                MSA_threshold_focus_cols_frac_gaps = float(mapping_protein_seq_DMS["MSA_threshold_focus_cols_frac_gaps"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]) if "MSA_threshold_focus_cols_frac_gaps" in mapping_protein_seq_DMS else 1.0
             else:
                 MSA_threshold_focus_cols_frac_gaps = float(mapping_protein_seq_DMS["MSA_threshold_focus_cols_frac_gaps"][mapping_protein_seq_DMS["DMS_id"]==DMS_id].values[0]) if "MSA_threshold_focus_cols_frac_gaps" in mapping_protein_seq_DMS else 1.0
             print("Sequence (fragment) gap threshold: "+str(MSA_threshold_sequence_frac_gaps))
@@ -125,26 +126,37 @@ def main():
 
         if "TranceptEVE" in args.inference_time_retrieval_type:
             EVE_model_paths = []
-            num_EVE_models = len(args.EVE_model_folder)
-            print("Number of distinct EVE models to be leveraged: {}".format(num_EVE_models))
-            for seed_index,folder in enumerate(args.EVE_model_folder):
-                if args.clinvar_scoring:
-                    if 'wave2' in args.EVE_model_folder[0] or 'wave3' in args.EVE_model_folder[0] or 'wave4' in args.EVE_model_folder[0]:
-                        EVE_model_name = mapping_protein_seq_DMS["DMS_id"][args.DMS_index] + "_Mar10_final"
-                    else:
-                        EVE_model_name = mapping_protein_seq_DMS["MSA_filename"][args.DMS_index].split('.a2m')[0] + "_Sep21_model"
+            EVE_seeds = args.EVE_seeds 
+            num_seeds = len(EVE_seeds)
+            print("Number of distinct EVE models to be leveraged: {}".format(num_seeds))
+            for seed in EVE_seeds:
+                # if args.clinvar_scoring:
+                    # if 'wave2' in args.EVE_model_folder[0] or 'wave3' in args.EVE_model_folder[0] or 'wave4' in args.EVE_model_folder[0]:
+                        # EVE_model_name = mapping_protein_seq_DMS["DMS_id"][args.DMS_index] + "_Mar10_final"
+                    # else:
+                        # EVE_model_name = mapping_protein_seq_DMS["MSA_filename"][args.DMS_index].split('.a2m')[0] + "_Sep21_model"
+                # else:
+                # TODO: Change filenames so that final isn't necessary 
+                print(f"{args.EVE_model_folder}/{os.path.basename(MSA_data_file.split('.a2m')[0])}_seed_{seed}")
+                if os.path.exists(f"{args.EVE_model_folder}/{os.path.basename(MSA_data_file.split('.a2m')[0])}_seed_{seed}"):
+                    EVE_model_name = f"{os.path.basename(MSA_data_file.split('.a2m')[0])}_seed_{seed}"
+                elif os.path.exists(f"{args.EVE_model_folder}/{UniProt_ID}_seed_{seed}"):
+                    EVE_model_name = f"{UniProt_ID}_seed_{seed}"
                 else:
-                    EVE_model_name = UniProt_ID + "_Aug7_seed_"+str(seed_index+1)+"000_final"
+                    print(f"No EVE Model available for {MSA_data_file} with random seed {seed} in {args.EVE_model_folder}. Exiting")
+                    exit(1)
+                    # EVE_model_name = UniProt_ID + args.EVE_model_suffix
+                    # EVE_model_name = UniProt_ID + "_Aug7_seed_"+str(seed_index+1)+"000_final"
                     #EVE_model_name = UniProt_ID + "_20230209_seed_"+str(seed_index+1)+"000_final"
                     
-                EVE_model_paths.append(folder + os.sep + EVE_model_name)
+                EVE_model_paths.append(args.EVE_model_folder + os.sep + EVE_model_name)
             config.EVE_model_paths = EVE_model_paths
             config.EVE_num_samples_log_proba = args.EVE_num_samples_log_proba
             config.EVE_model_parameters_location = args.EVE_model_parameters_location
             config.MSA_recalibrate_probas = args.MSA_recalibrate_probas
             config.EVE_recalibrate_probas = args.EVE_recalibrate_probas
         else:
-            num_EVE_models=0
+            num_seeds=0
         if args.indel_mode:
             config.clustal_omega_location = args.clustal_omega_location
     else:
@@ -164,8 +176,10 @@ def main():
     normalization = '_norm-EVE' if args.EVE_recalibrate_probas else ''
     normalization = normalization + '_norm-MSA' if args.MSA_recalibrate_probas else normalization
     retrieval_weights = '_MSA-' + str(args.retrieval_inference_MSA_weight) +'_EVE-'+ str(args.retrieval_inference_EVE_weight) if args.retrieval_weights_manual else ''
-    retrieval_type = ('_retrieval_' + args.inference_time_retrieval_type + retrieval_weights + '_' + str(num_EVE_models) + '-EVE-models' + normalization) if args.inference_time_retrieval_type is not None else '_no_retrieval'
-    scoring_filename = args.output_scores_folder + os.sep + model_name + retrieval_type + mirror_type + mutation_type
+    retrieval_type = ('_retrieval_' + args.inference_time_retrieval_type + retrieval_weights + '_' + str(num_seeds) + '-EVE-models' + normalization) if args.inference_time_retrieval_type is not None else '_no_retrieval'
+    # scoring_filename = args.output_scores_folder + os.sep + model_name + retrieval_type + mirror_type + mutation_type
+    # saving directly to folder now instead of creating subfolder 
+    scoring_filename = args.output_scores_folder
     if not os.path.isdir(scoring_filename):
         os.mkdir(scoring_filename)
     scoring_filename += os.sep + DMS_id + '.csv'

@@ -156,7 +156,11 @@ def load_and_filter_seqs(data_filename, mode="ProteinGym"):
     """
     df = pd.read_csv(data_filename, low_memory=False)
     if mode=="ProteinGym":
-        all_sequences = np.unique(df.mutated_sequence.values)
+        if "mutated_sequence" in df.columns.values:
+            all_sequences = np.unique(df.mutated_sequence.values)
+        # assumes "mutant" column contains full mutated sequence instead
+        else:
+            all_sequences = np.unique(df.mutant.values)
     elif 'Sequence' in df.columns.values:
         all_sequences = np.unique(df.Sequence.values)
     else:

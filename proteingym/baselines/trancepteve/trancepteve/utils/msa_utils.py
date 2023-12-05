@@ -139,7 +139,7 @@ def get_msa_prior(MSA_data_file, MSA_weight_file_name, MSA_start, MSA_end, len_t
     return msa_prior, processed_MSA_depth
 
 
-def update_retrieved_MSA_log_prior_indel(model, MSA_log_prior, MSA_start, MSA_end, mutated_sequence):
+def update_retrieved_MSA_log_prior_indel(model, MSA_log_prior, MSA_start, MSA_end, mutated_sequence, clustal_hash):
     """
     Function to process MSA when scoring indels.
     To identify positions to add / remove in the retrieved MSA, we append and align the sequence to be scored to the original MSA for that protein family with Clustal Omega.
@@ -150,7 +150,7 @@ def update_retrieved_MSA_log_prior_indel(model, MSA_log_prior, MSA_start, MSA_en
     model_id = '_'.join([str(x) for x in [model.inference_time_retrieval_type, random_string]])
     if not os.path.isdir(model.MSA_folder + os.sep + "Sampled"):
         os.mkdir(model.MSA_folder + os.sep + "Sampled")
-    sampled_MSA_location = model.MSA_folder + os.sep + "Sampled" + os.sep + "Sampled_" + model.MSA_filename.split(os.sep)[-1]
+    sampled_MSA_location = model.MSA_folder + os.sep + "Sampled" + os.sep + "Sampled_" + clustal_hash + "_" + model.MSA_filename.split(os.sep)[-1]
     
     if not os.path.exists(sampled_MSA_location):
         msa_data = process_msa_data(model.MSA_filename)
@@ -162,12 +162,12 @@ def update_retrieved_MSA_log_prior_indel(model, MSA_log_prior, MSA_start, MSA_en
                 msa_data_sampled[key] = msa_data_sampled[key].replace(".","-")
                 sampled_write_location.write(key_name+"\n"+"\n".join([msa_data_sampled[key][i:i+80] for i in range(0, len(msa_data_sampled[key]), 80)])+"\n")
     
-    seq_to_align_location = model.MSA_folder + os.sep + "Sampled" + os.sep + "Seq_to_align_" + model_id + '_' + model.MSA_filename.split(os.sep)[-1]
+    seq_to_align_location = model.MSA_folder + os.sep + "Sampled" + os.sep + "Seq_to_align_" + clustal_hash + "_" + model_id + '_' + model.MSA_filename.split(os.sep)[-1]
     sequence_text_split = [mutated_sequence[i:i+80] for i in range(0, len(mutated_sequence), 80)]
     sequence_text_split_split_join = "\n".join([">SEQ_TO_SCORE"]+sequence_text_split)
     os.system("echo '"+sequence_text_split_split_join+"' > "+seq_to_align_location)
     
-    expanded_MSA_location = model.MSA_folder + os.sep + "Sampled" + os.sep + "Expanded_" + model_id + '_' + model.MSA_filename.split(os.sep)[-1]
+    expanded_MSA_location = model.MSA_folder + os.sep + "Sampled" + os.sep + "Expanded_" + clustal_hash + "_" + model_id + '_' + model.MSA_filename.split(os.sep)[-1]
     clustalw_cline = ClustalOmegaCommandline(cmd=model.config.clustal_omega_location,
                                             profile1=sampled_MSA_location,
                                             profile2=seq_to_align_location,
