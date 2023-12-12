@@ -1,8 +1,11 @@
 # ProteinGym
 
+### Notes
+12 December 2023: The code for training and evaluating supervised models is currently shared in https://github.com/OATML-Markslab/ProteinNPT. We are in the process of moving the code to this repo.
+
 ## Overview
 
-ProteinGym is an extensive set of Deep Mutational Scanning (DMS) assays curated to enable thorough comparisons of various mutation effect predictors indifferent regimes. It is comprised of two benchmarks: 1) a substitution benchmark which currently consists of the experimental characterisation of ∼3.3M missense variants across 192 DMS assays 2) an indel benchmark that includes ∼300k mutants across 74 DMS assays.
+ProteinGym is an extensive set of Deep Mutational Scanning (DMS) assays curated to enable thorough comparisons of various mutation effect predictors indifferent regimes. It is comprised of two benchmarks: 1) a substitution benchmark which currently consists of the experimental characterisation of ~2.7M missense variants across 217 DMS assays 2) an indel benchmark that includes ∼300k mutants across 74 DMS assays.
 
 Each processed file in each benchmark corresponds to a single DMS assay, and contains the following variables:
 - mutant (str): describes the set of substitutions to apply on the reference sequence to obtain the mutated sequence (eg., A1P:D2N implies the amino acid 'A' at position 1 should be replaced by 'P', and 'D' at position 2 should be replaced by 'N'). Present in the the ProteinGym substitution assays only (not indels).
@@ -10,32 +13,35 @@ Each processed file in each benchmark corresponds to a single DMS assay, and con
 - DMS_score (float): corresponds to the experimental measurement in the DMS assay. Across all assays, the higher the DMS_score value, the higher the fitness of the mutated protein
 - DMS_score_bin (int): indicates whether the DMS_score is above the fitness cutoff (1 is fit, 0 is not fit)
 
-Additionally, we provide two reference files for each benharmk that give further details on each assay and contain in particular:
+Additionally, we provide two reference files for each benchmark that give further details on each assay and contain in particular:
 - The UniProt_ID of the corresponding protein, along with taxon and MSA depth category
 - The target sequence (target_seq) used in the assay
 - Details on how the DMS_score was created from the raw files and how it was binarized 
 
-To download the substitution benchmark (~1.3G unzipped):
-```
-curl -o ProteinGym_substitutions.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/ProteinGym_substitutions.zip 
-unzip ProteinGym_substitutions.zip
-rm ProteinGym_substitutions.zip
-```
-
-Similarly, to download the indel benchmark (~212M unzipped):
-```
-curl -o ProteinGym_indels.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/ProteinGym_indels.zip
-unzip ProteinGym_indels.zip
-rm ProteinGym_indels.zip
-```
-
-The ProteinGym benchmarks are also available on the [Hugging Face Hub](https://huggingface.co/datasets/OATML-Markslab/ProteinGym).
+To download the benchmarks, please see `DMS benchmark: Substitutions` and `DMS benchmark: Indels` in the "Resources" section below.
 
 ## Fitness prediction performance
 
-The [Detailed_performance_files](https://github.com/OATML-Markslab/ProteinGym/tree/main/Detailed_performance_files) folder provides detailed performance files for all baselines on the two ProteinGym benchmarks, for the 3 focus performance metrics (Spearman's rank, AUC, MCC) as introduced in the original [Tranception paper](https://proceedings.mlr.press/v162/notin22a.html).
+The [benchmarks](https://github.com/OATML-Markslab/ProteinGym/tree/main/benchmarks) folder provides detailed performance files for all baselines on the DMS and clinical benchmarks.
 
-We recommand to aggregate fitness prediction performance at the Uniprot ID level to avoid biasing results towards proteins for which several DMS assays are available in ProteinGym. The corresponding aggregated files are suffixed with "_Uniprot_level", while the non aggregated performance files are suffixed with "_DMS_level". Note that there is at most one DMS per Uniprot_ID for the ProteinGym indel benchmark (ie., no difference between "_Uniprot_level" and "_DMS_level"). We thus only provide one set of performance metrics for that benchmark.
+Metrics for DMS assays (both supervised and zero-shot): Spearman, NDCG, AUC, MCC and Top-K recall
+Metrics for clinical benchmark: AUC
+
+Metrics are aggregated as follows:
+1. Aggregating by UniProt ID (to avoid biasing results towards proteins for which several DMS assays are available in ProteinGym)
+2. Aggregating by different functional categories, and taking the mean across those categories.
+
+These files are named e.g. `DMS_substitutions_Spearman_DMS_level.csv`, `DMS_substitutions_Spearman_Uniprot_level` and `DMS_substitutions_Spearman_Uniprot_Selection_Type_level` respectively for these different steps.
+
+For other deep dives (performance split by taxa, MSA depth, mutational depth and more), these are all contained in the `benchmarks/DMS_zero_shot/substitutions/Spearman/Summary_performance_DMS_substitutions_Spearman.csv` folder (resp. DMS_indels/clinical_substitutions/clinical_indels & their supervised counterparts). These files are also what are hosted on the website.
+
+We also include, as on the website, a bootstrapped standard error of these aggregated metrics to reflect the variance in the final numbers with respect to the individual assays.
+
+To calculate the DMS substitution benchmark metrics:
+1. Download the model scores from the website
+2. Run `./scripts/scoring_DMS_zero_shot/performance_substitutions.sh`
+
+And for indels, follow step #1 and run `./scripts/scoring_DMS_zero_shot/performance_substitutions_indels.sh`.
 
 ### ProteinGym benchmarks - Leaderboard
 
@@ -47,7 +53,7 @@ Model name | Model type | Reference
 --- | --- | --- |
 Site Independent | Alignment-based model | [Hopf, T.A., Ingraham, J., Poelwijk, F.J., Schärfe, C.P., Springer, M., Sander, C., & Marks, D.S. (2017). Mutation effects predicted from sequence co-variation. Nature Biotechnology, 35, 128-135.](https://www.nature.com/articles/nbt.3769)
 EVmutation | Alignment-based model | [Hopf, T.A., Ingraham, J., Poelwijk, F.J., Schärfe, C.P., Springer, M., Sander, C., & Marks, D.S. (2017). Mutation effects predicted from sequence co-variation. Nature Biotechnology, 35, 128-135.](https://www.nature.com/articles/nbt.3769)
-Wavenet | Alignment-based model | [Shin, J., Riesselman, A.J., Kollasch, A.W., McMahon, C., Simon, E., Sander, C., Manglik, A., Kruse, A.C., & Marks, D.S. (2021). Protein design and variant prediction using autoregressive generative models. Nature Communications, 12.](https://www.nature.com/articles/s41467-021-22732-w)
+WaveNet | Alignment-based model | [Shin, J., Riesselman, A.J., Kollasch, A.W., McMahon, C., Simon, E., Sander, C., Manglik, A., Kruse, A.C., & Marks, D.S. (2021). Protein design and variant prediction using autoregressive generative models. Nature Communications, 12.](https://www.nature.com/articles/s41467-021-22732-w)
 DeepSequence | Alignment-based model | [Riesselman, A.J., Ingraham, J., & Marks, D.S. (2018). Deep generative models of genetic variation capture the effects of mutations. Nature Methods, 15, 816-822.](https://www.nature.com/articles/s41592-018-0138-4)
 GEMME | Alignment-based model | [Laine, É., Karami, Y., & Carbone, A. (2019). GEMME: A Simple and Fast Global Epistatic Model Predicting Mutational Effects. Molecular Biology and Evolution, 36, 2604 - 2619.](https://pubmed.ncbi.nlm.nih.gov/31406981/)
 EVE | Alignment-based model | [Frazer, J., Notin, P., Dias, M., Gomez, A.N., Min, J.K., Brock, K.P., Gal, Y., & Marks, D.S. (2021). Disease variant prediction with deep generative models of evolutionary data. Nature.](https://www.nature.com/articles/s41586-021-04043-8)
@@ -57,42 +63,46 @@ ESM-1v | Protein language model | [Meier, J., Rao, R., Verkuil, R., Liu, J., Ser
 VESPA | Protein language model | [Marquet, C., Heinzinger, M., Olenyi, T., Dallago, C., Bernhofer, M., Erckert, K., & Rost, B. (2021). Embeddings from protein language models predict conservation and variant effects. Human Genetics, 141, 1629 - 1647.](https://link.springer.com/article/10.1007/s00439-021-02411-y)
 RITA | Protein language model | [Hesslow, D., Zanichelli, N., Notin, P., Poli, I., & Marks, D.S. (2022). RITA: a Study on Scaling Up Generative Protein Sequence Models. ArXiv, abs/2205.05789.](https://arxiv.org/abs/2205.05789)
 ProtGPT2 | Protein language model | [Ferruz, N., Schmidt, S., & Höcker, B. (2022). ProtGPT2 is a deep unsupervised language model for protein design. Nature Communications, 13.](https://www.nature.com/articles/s41467-022-32007-7)
-Progen2 | Protein language model | [Nijkamp, E., Ruffolo, J.A., Weinstein, E.N., Naik, N., & Madani, A. (2022). ProGen2: Exploring the Boundaries of Protein Language Models. ArXiv, abs/2206.13517.](https://arxiv.org/abs/2206.13517)
+ProGen2 | Protein language model | [Nijkamp, E., Ruffolo, J.A., Weinstein, E.N., Naik, N., & Madani, A. (2022). ProGen2: Exploring the Boundaries of Protein Language Models. ArXiv, abs/2206.13517.](https://arxiv.org/abs/2206.13517)
 MSA Transformer | Hybrid |[Rao, R., Liu, J., Verkuil, R., Meier, J., Canny, J.F., Abbeel, P., Sercu, T., & Rives, A. (2021). MSA Transformer. ICML.](http://proceedings.mlr.press/v139/rao21a.html)
 Tranception | Hybrid | [Notin, P., Dias, M., Frazer, J., Marchena-Hurtado, J., Gomez, A.N., Marks, D.S., & Gal, Y. (2022). Tranception: protein fitness prediction with autoregressive transformers and inference-time retrieval. ICML.](https://proceedings.mlr.press/v162/notin22a.html)
 TranceptEVE | Hybrid | [Notin, P., Van Niekerk, L., Kollasch, A., Ritter, D., Gal, Y. & Marks, D.S. &  (2022). TranceptEVE: Combining Family-specific and Family-agnostic Models of Protein Sequences for Improved Fitness Prediction. NeurIPS, LMRL workshop.](https://www.biorxiv.org/content/10.1101/2022.12.07.519495v1?rss=1)
+<!-- TODO Add CARP and all the others -->
 
-Except for the Wavenet model (which only uses alignments to recover a set of homologous protein sequences to train on, but then trains on non-aligned sequences), all alignment-based methods are unable to score indels given the fixed coordinate system they are trained on. Similarly, the masking procedure to generate the masked-marginals for ESM-1v and MSA Transformer requires the position to exist in the wild-type sequence. All the other model architectures listed above (eg., Tranception, RITA, Progen2) are included in the indel benchmark.
+Except for the WaveNet model (which only uses alignments to recover a set of homologous protein sequences to train on, but then trains on non-aligned sequences), all alignment-based methods are unable to score indels given the fixed coordinate system they are trained on. Similarly, the masking procedure to generate the masked-marginals for ESM-1v and MSA Transformer requires the position to exist in the wild-type sequence. All the other model architectures listed above (eg., Tranception, RITA, ProGen2) are included in the indel benchmark.
 
-## Aggregated model scoring files
-The scores for all DMS assays in the ProteinGym substitution benchmark for all baselines (eg., Tranception, EVE, Wavenet, ESM-1v, MSA Transformer) may be downloaded as follows;
+For clinical baselines, we used dbNSFP 4.4a as detailed in the manuscript appendix (and in `proteingym/clinical_benchmark_notebooks/clinical_subs_processing.ipynb`).
+
+## Resources
+
+To download and unzip the data, run the following commands for each of the data sources you would like to download, e.g. for all the baseline scores on the DMS substitution scores:
 ```
-curl -o scores_all_models_proteingym_substitutions.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/scores_all_models_proteingym_substitutions.zip
+curl -o scores_all_models_proteingym_substitutions.zip https://marks.hms.harvard.edu/proteingym/scores_all_models_proteingym_substitutions.zip
 unzip scores_all_models_proteingym_substitutions.zip
 rm scores_all_models_proteingym_substitutions.zip
 ```
-Similarly for the indel benchmark, all scoring files may be downloaded as follows:
-```
-curl -o scores_all_models_proteingym_indels.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/scores_all_models_proteingym_indels.zip
-unzip scores_all_models_proteingym_indels.zip
-rm scores_all_models_proteingym_indels.zip
-```
+Data | Size (unzipped) | Link
+--- | --- | --- |
+DMS benchmark: Substitutions | 1.1GB | DMS_ProteinGym_substitutions
+DMS benchmark: Indels | 200MB | DMS_ProteinGym_indels
+DMS Model scores: Substitutions | 44.1GB | https://marks.hms.harvard.edu/proteingym/scores_all_models_proteingym_substitutions.zip
+DMS Model scores: Indels | 9.6GB | https://marks.hms.harvard.edu/proteingym/scores_all_models_proteingym_indels.zip
+Multiple Sequence Alignments (MSAs) for DMS assays | 5.2GB | https://marks.hms.harvard.edu/proteingym/DMS_msa_files.zip
+Redundancy-based sequence weights for DMS assays | 200MB | https://marks.hms.harvard.edu/proteingym/DMS_msa_weights.zip
+Predicted 3D structures from inverse-folding models | 84MB | https://marks.hms.harvard.edu/proteingym/ProteinGym_AF2_structures.zip
+Clinical benchmark: Substitutions | 123MB | https://marks.hms.harvard.edu/proteingym/clinical_ProteinGym_substitutions.zip
+Clinical benchmark: Indels | 2.8MB | https://marks.hms.harvard.edu/proteingym/clinical_ProteinGym_indels.zip
+Clinical MSAs | 17.8GB | https://marks.hms.harvard.edu/proteingym/clinical_msa_files.zip
+Clinical MSA weights | 250MB | https://marks.hms.harvard.edu/proteingym/clinical_msa_weights.zip
 
-## Multiple Sequence Alignments (MSAs)
+Then we also host the raw DMS assays (before preprocessing)
 
-The MSAs used to train alignment-based methods or used at inference in Tranception with retrieval and MSA Transformer may be downloaded as follows (~4.3GB unzipped):
-```
-curl -o MSA_files.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/MSA_files.zip
-unzip MSA_files.zip
-rm MSA_files.zip
-
-```
-And the redundancy-based sequence weights for the EVE, EVMutation, site-independent and Tranception models are available here:
-```
-curl -o MSA_weights.zip https://marks.hms.harvard.edu/proteingym/ProteinGym_2023/MSA_weights.zip
-unzip MSA_weights.zip
-rm MSA_weights.zip
-```
+Data | Size (unzipped) | Link
+--- | --- | --- |
+DMS benchmark: Substitutions (raw) | 500MB | https://marks.hms.harvard.edu/proteingym/substitutions_raw_DMS.zip
+DMS benchmark: Indels (raw) | 450MB | https://marks.hms.harvard.edu/proteingym/indels_raw_DMS.zip
+Clinical benchmark: Substitutions (raw) | 58MB | https://marks.hms.harvard.edu/proteingym/substitutions_raw_clinical.zip
+Clinical benchmark: Indels (raw) | 12.4MB | https://marks.hms.harvard.edu/proteingym/indels_raw_clinical.zip
 
 ## How to contribute?
 
@@ -116,11 +126,7 @@ This project is available under the MIT license.
 
 ## Reference
 If you use ProteinGym in your work, please cite the following paper:
-```
-TBD
-```
+[ProteinGym: Large-Scale Benchmarks for Protein Design and Fitness Prediction](https://neurips.cc/virtual/2023/poster/73578)
 
 ## Links
-<!-- - Original paper: https://proceedings.mlr.press/v162/notin22a.html -->
 - Website: https://www.proteingym.org/
-- HuggingFace: https://huggingface.co/datasets/OATML-Markslab/ProteinGym

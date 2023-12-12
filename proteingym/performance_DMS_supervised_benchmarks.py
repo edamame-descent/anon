@@ -4,6 +4,13 @@ import argparse
 from tqdm import tqdm
 import json 
 
+"""
+This is the script used to compute statistics for the supervised scoring models. 
+It uses the score files output from the runs done for the ProteinNPT paper, and the 
+code to run those supervised models is available in the ProteinNPT repo 
+"""
+
+
 def compute_bootstrap_standard_error_functional_categories(df, number_assay_reshuffle=10000, top_model="ProteinNPT"):
     """
     Computes the non-parametric bootstrap standard error for the mean estimate of a given performance metric (eg., Spearman, AUC) across DMS assays (ie., the sample standard deviation of the mean across bootstrap samples)
@@ -31,7 +38,6 @@ if __name__ == "__main__":
     parser.add_argument('--input_scoring_file', type=str, help='Name of the file where all input scores are present (expects one scoring file per DMS)')
     parser.add_argument('--output_performance_file_folder', default='./outputs/tranception_performance', type=str, help='Name of folder where to save performance analysis files')
     parser.add_argument('--DMS_reference_file_path', type=str, help='Reference file with list of DMSs to consider')
-    parser.add_argument('--DMS_data_folder', type=str, help='Path to folder that contains all DMS datasets')
     parser.add_argument('--indel_mode', action='store_true', help='Whether to score sequences with insertions and deletions')
 
     args = parser.parse_args()
@@ -51,7 +57,7 @@ if __name__ == "__main__":
     score_df = score_df.merge(ref_df[["DMS_id","MSA_Neff_L_category","coarse_selection_type","taxon"]],left_on="assay_id",right_on="DMS_id",how="left")
     score_df = score_df[["assay_id","model_name", "DMS_id","UniProt_id","MSA_Neff_L_category","coarse_selection_type","taxon","fold_variable_name","Spearman_fitness","loss_fitness"]]
     if args.indel_mode:
-        cv_schemes = []
+        cv_schemes = ["fold_random_5"]
     else:
         cv_schemes = ["fold_random_5","fold_modulo_5","fold_contiguous_5"]
     for metric in metrics:
@@ -85,11 +91,17 @@ if __name__ == "__main__":
                 all_DMS_cv_schemes_perf = {cv_scheme:all_DMS_cv_schemes_perf[cv_scheme].merge(performance_all_DMS_cv_scheme[cv_scheme],on="model_names",how="inner") for cv_scheme in cv_schemes}
         all_DMS_perf = all_DMS_perf.set_index("model_names").transpose().reset_index(names="DMS_id")
         all_DMS_perf.columns = [constants["supervised_clean_names"][x] if x in constants["supervised_clean_names"] else x for x in all_DMS_perf.columns]
-        all_DMS_perf.round(3).to_csv(os.path.join(output_folder,f"DMS_substitutions_{metric}_DMS_level.csv"),index=False)
+        if args.indel_mode:
+            all_DMS_perf.round(3).to_csv(os.path.join(output_folder,f"DMS_indels_{metric}_DMS_level.csv"),index=False)
+        else:
+            all_DMS_perf.round(3).to_csv(os.path.join(output_folder,f"DMS_substitutions_{metric}_DMS_level.csv"),index=False)
         for cv_scheme in cv_schemes:
             all_DMS_cv_schemes_perf[cv_scheme] = all_DMS_cv_schemes_perf[cv_scheme].set_index("model_names").transpose().reset_index(names="DMS_id")
             all_DMS_cv_schemes_perf[cv_scheme].columns = [constants["supervised_clean_names"][x] if x in constants["supervised_clean_names"] else x for x in all_DMS_cv_schemes_perf[cv_scheme].columns]
-            all_DMS_cv_schemes_perf[cv_scheme].round(3).to_csv(os.path.join(output_folder,f"DMS_substitutions_{metric}_DMS_level_{cv_scheme}.csv"),index=False)
+            if args.indel_mode:
+                all_DMS_cv_schemes_perf[cv_scheme].round(3).to_csv(os.path.join(output_folder,f"DMS_indels_{metric}_DMS_level_{cv_scheme}.csv"),index=False)
+            else:
+                all_DMS_cv_schemes_perf[cv_scheme].round(3).to_csv(os.path.join(output_folder,f"DMS_substitutions_{metric}_DMS_level_{cv_scheme}.csv"),index=False)
 
         def pivot_model_df(df, value_column, score_column):
             df = df[["model_name",value_column,score_column]]
@@ -103,7 +115,11 @@ if __name__ == "__main__":
             if len(cv_subset) == 0:
                 raise ValueError("No scores found for cross-validation scheme {}".format(cv_scheme))
             cv_uniprot_function = cv_subset.groupby(["model_name","UniProt_id","coarse_selection_type"]).mean()
-            bootstrap_standard_error = compute_bootstrap_standard_error_functional_categories(cv_uniprot_function)
+            if args.indel_mode:
+                top_model = "Embeddings - Augmented - EMS1v"
+            else:
+                top_model = "ProteinNPT"
+            bootstrap_standard_error = compute_bootstrap_standard_error_functional_categories(cv_uniprot_function,top_model=top_model,number_assay_reshuffle=10000)
             bootstrap_standard_error = bootstrap_standard_error[score_column[metric]].reset_index()
             bootstrap_standard_error.columns = ["model_name",f"Bootstrap_standard_error_{metric}"]
             cv_function_average = cv_uniprot_function.groupby(["model_name","coarse_selection_type"]).mean()
@@ -130,7 +146,11 @@ if __name__ == "__main__":
                 all_summary_performance[[column for column in all_summary_performance.columns if column not in ignore_columns]] += summary_performance.set_index("model_name")/len(cv_schemes)
                 all_summary_performance[f"Average_{metric}_{cv_scheme}"] = summary_performance[f"Average_{metric}"].values
         all_summary_performance = all_summary_performance.reset_index(names="Model_name")
-        all_summary_performance.sort_values(by=f"Average_{metric}",ascending=False,inplace=True)
+        if metric == "MSE":
+            ascending = True
+        else:
+            ascending = False
+        all_summary_performance.sort_values(by=f"Average_{metric}",ascending=ascending,inplace=True)
         all_summary_performance.index = range(1,len(all_summary_performance)+1)
         all_summary_performance.index.name = 'Model_rank'
         all_summary_performance = all_summary_performance.round(3)
@@ -138,9 +158,16 @@ if __name__ == "__main__":
         all_summary_performance["References"] = all_summary_performance["Model_name"].apply(lambda x: constants["supervised_model_references"][x] if x in constants["supervised_model_references"] else "")
         all_summary_performance["Model details"] = all_summary_performance["Model_name"].apply(lambda x: constants["supervised_model_details"][x] if x in constants["supervised_model_details"] else "")
         all_summary_performance["Model type"] = all_summary_performance["Model_name"].apply(lambda x: constants["supervised_model_types"][x] if x in constants["supervised_model_types"] else "")
-        column_order = ["Model_name","Model type",f"Average_{metric}",f"Bootstrap_standard_error_{metric}",f"Average_{metric}_fold_random_5",f"Average_{metric}_fold_modulo_5",f"Average_{metric}_fold_contiguous_5","Function_Activity","Function_Binding","Function_Expression","Function_OrganismalFitness","Function_Stability","Low_MSA_depth","Medium_MSA_depth","High_MSA_depth","Taxa_Human","Taxa_Other_Eukaryote","Taxa_Prokaryote","Taxa_Virus","References","Model details"]
+        if args.indel_mode:
+            all_summary_performance["Function_Binding"] = "N/A"
+            column_order = ["Model_name","Model type",f"Average_{metric}",f"Bootstrap_standard_error_{metric}",f"Average_{metric}_fold_random_5","Function_Activity","Function_Binding","Function_Expression","Function_OrganismalFitness","Function_Stability","Low_MSA_depth","Medium_MSA_depth","High_MSA_depth","Taxa_Human","Taxa_Other_Eukaryote","Taxa_Prokaryote","Taxa_Virus","References","Model details"]
+        else:
+            column_order = ["Model_name","Model type",f"Average_{metric}",f"Bootstrap_standard_error_{metric}",f"Average_{metric}_fold_random_5",f"Average_{metric}_fold_modulo_5",f"Average_{metric}_fold_contiguous_5","Function_Activity","Function_Binding","Function_Expression","Function_OrganismalFitness","Function_Stability","Low_MSA_depth","Medium_MSA_depth","High_MSA_depth","Taxa_Human","Taxa_Other_Eukaryote","Taxa_Prokaryote","Taxa_Virus","References","Model details"]
         all_summary_performance = all_summary_performance[column_order]
-        all_summary_performance.to_csv(os.path.join(output_folder,f"Summary_performance_DMS_substitutions_{metric}.csv"))
+        if args.indel_mode:
+            all_summary_performance.to_csv(os.path.join(output_folder,f"Summary_performance_DMS_indels_{metric}.csv"))
+        else:
+            all_summary_performance.to_csv(os.path.join(output_folder,f"Summary_performance_DMS_substitutions_{metric}.csv"))
 
 
     

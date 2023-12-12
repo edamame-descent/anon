@@ -110,7 +110,6 @@
         "CARP_38M":"<a href='https://www.biorxiv.org/content/10.1101/2022.05.19.492714v4'>Kevin K. Yang, Nicolo Fusi, Alex X. Lu (2023). Convolutions are competitive with transformers for protein sequence pretraining. BioRxiv.</a>",
         "CARP_600K":"<a href='https://www.biorxiv.org/content/10.1101/2022.05.19.492714v4'>Kevin K. Yang, Nicolo Fusi, Alex X. Lu (2023). Convolutions are competitive with transformers for protein sequence pretraining. BioRxiv.</a>",
         "ProteinMPNN":"<a href='https://www.science.org/doi/10.1126/science.add2187'>J. Dauparas, I. Anishchenko, N. Bennett, H. Bai, R. J. Ragotte, L. F. Milles, B. I. M. Wicky, A. Courbet, R. J. de Haas, N. Bethel, P. J. Y. Leung, T. F. Huddy, S. Pellock, D. Tischer, F. Chan,B. Koepnick, H. Nguyen, A. Kang, B. Sankaran,A. K. Bera, N. P. King,D. Baker (2022). Robust deep learning-based protein sequence design using ProteinMPNN. Science, Vol 378.</a>"
-
     },
     "clean_names":{
         "Tranception_L_no_retrieval":"Tranception L no retrieval",
@@ -201,8 +200,10 @@
     "supervised_clean_names":{
         "ProteinNPT":"ProteinNPT",
         "Embeddings - Augmented - MSA Transformer":"MSA Transformer Embeddings",
+        "Embeddings - MSA Transformer":"MSA Transformer Embeddings",
         "Embeddings - Augmented - EMS1v":"ESM-1v Embeddings",
         "Embeddings - Augmented - Tranception":"Tranception Embeddings",
+        "Embeddings - Tranception":"Tranception Embeddings",
         "OHE - Augmented - TransceptEVE":"TranceptEVE + One-Hot Encodings",
         "OHE - Augmented - Tranception":"Tranception + One-Hot Encodings",
         "OHE - Augmented - MSA Transformer":"MSA_Transformer + One-Hot Encodings",

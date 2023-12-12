@@ -6,6 +6,7 @@ output
 __pycache__
 *.pyc
 .ipynb_checkpoints
+*.html
 
 # From GitHub .gitignore Python template
 
@@ -69,3 +70,4 @@ MANIFEST
 
 # Other manual ignores
 scripts/scoring_clinical_subs_zero_shot/scoring_ESM1b_substitutions.sh
+proteingym/baselines/vespa/*.fasta*
