@@ -18,6 +18,19 @@ outputs/intermediate_outputs/
 outputs/output_scores/
 clustal/
 processed_data/
+
+# Ignore vespa output
+vespa_run_directory
+
+# Ignoring slurm scripts that we use for scoring
+o2_scripts/
+
+# Ignoring HMM model files
+# And temporary scripts directories
+scripts/scoring_DMS_zero_shot/HMM_temp/
+scripts/scoring_DMS_zero_shot/gemme_tmp/
+
+
 # Optional:
 baseline_models/bash_scripts/old/
 # Slurm script outputs
@@ -53,3 +66,6 @@ MANIFEST
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# Other manual ignores
+scripts/scoring_clinical_subs_zero_shot/scoring_ESM1b_substitutions.sh
