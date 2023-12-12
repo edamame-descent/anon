@@ -5,6 +5,8 @@ In the reference files, we provide detailed information about all DMS assays inc
 The meaning of each column in the ProteinGym reference files is provided below:
 - DMS_id (str): Uniquely identifies each DMS assay in ProteinGym. It is obtained as the concatenation of the UniProt ID of the mutated protein, the first author name and the year of publication. If there are several datasets with the same characteristics, another defining attribute of the assay is added to preserve unicity.
 - DMS_filename (str): Name of the processed DMS file.
+- UniProt ID (str): The UniProt ID of the sequence mutated in the assay
+- Source_organism (str): The organism associated with the UniProt ID, that the WT sequence appears in.
 - target_seq (str): Sequence of the target protein (reference sequence mutated in the assay).
 - seq_len (int): Length of the target protein sequence.
 - includes_multiple_mutants (bool): Indicates whether the DMS contains mutations that are multiple mutants. Substitution benchmark only.
@@ -14,6 +16,7 @@ The meaning of each column in the ProteinGym reference files is provided below:
 - DMS_binarization_cutoff_ProteinGym (float): Cutoff used to divide fitness scores into binary labels.
 - DMS_binarization_method (str): Method used to decide the binarization cutoff (manual or median).
 - region_mutated (str): Region of the target protein that is mutated in the DMS.
+- Molecule_name (str): Name of the protein/gene.
 - MSA_filename (str): Name of the MSA file generated based on the reference sequence mutated during the DMS experiment. Note that different reference sequences may be used in different DMS experiments for the same protein. For example, Giacomelli et al. (2018) and Kotler et al. (2018) used slightly different reference sequences in their respective DMS experiments for the P53 protein. We generated different MSAs accordingly.
 - MSA_start (int): Locates the beginning of the first sequence in the MSA with respect to the target sequence. For example, if the MSA covers from position 10 to position 60 of the target sequence, then MSA_start is 10.
 - MSA_end (int): Locates the end of the first sequence in the MSA with respect to the target sequence. For example, if the MSA covers from position 10 to position 60 of the target sequence, then MSA_end is 60.
@@ -30,6 +33,9 @@ The meaning of each column in the ProteinGym reference files is provided below:
 - raw_DMS_phenotype_name (str): Name of the column in the raw DMS that we used as fitness score.
 - raw_DMS_directionality (int): Sign of the correlation between the DMS_phenotype column values and protein fitness in the raw DMS files. In any given DMS, the directionality is 1 if higher values of the measurement are associated with higher fitness, and -1 otherwise. For simplicity, we adjusted directionality in the final ProteinGym benchmarks so that a higher value of DMS_score is always associated with higher fitness. Consequently, correlations between model scores and the final DMS_score values should always be positive (unless the predictions from the considered model are worse than random for that DMS).
 - raw_DMS_mutant_column (str): Name of the column in the raw DMS that indicates which mutants were assayed.
+- Replicates (str): Description of replicates
+- Pdb_file (str): Path to the predicted structure (all available for download)
+- Coarse_selection_type (str): The broad "functional category" of the assay, which is used for aggregation (see the appendix for the different definitions of these categories).
 
 ## Raw DMS assays files
 
