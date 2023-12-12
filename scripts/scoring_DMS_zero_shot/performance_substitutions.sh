@@ -1,24 +1,21 @@
 #!/bin/bash 
+#SBATCH --cpus-per-task=1
+#SBATCH -t 01:00:00
+#SBATCH --mem=8G
+#SBATCH --output=./slurm/performance/perf-%j.out
+#SBATCH --error=./slurm/performance/perf-%j.err
+#SBATCH --job-name="perf_subs"
 
-source activate proteingym_env
+module load miniconda3/4.10.3
 
-export PATH_TO_DMS_SUBSTITUTIONS=/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/DMS_assays/substitutions
-export PATH_TO_MODEL_SCORES=/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/model_scores/zero_shot_substitutions/merged_scores_20230613
-export PATH_TO_OUTPUT_PERFORMANCE=../../output/all_scores_20230613
-export DMS_reference_file_path=../../reference_files/DMS_substitutions.csv
+source ../zero_shot_config.sh
+source activate /n/groups/marks/software/anaconda_o2/envs/proteingym_env
 
-#############################################################################################################################
+export output_performance_file_folder=../../benchmarks/DMS_zero_shot/substitutions
 
-export model_list="all_models"
-# Replace the following paths based on where you store models and data
-export DMS_data_folder=$PATH_TO_DMS_SUBSTITUTIONS
-export input_scoring_files_folder=$PATH_TO_MODEL_SCORES
-export output_performance_file_folder=$PATH_TO_OUTPUT_PERFORMANCE
-
-python ../../proteingym/performance_DMS_benchmarks.py \
-                --model_list ${model_list} \
-                --input_scoring_files_folder ${input_scoring_files_folder} \
+python3 ../../proteingym/performance_DMS_benchmarks.py \
+                --input_scoring_files_folder ${DMS_merged_score_folder_subs} \
                 --output_performance_file_folder ${output_performance_file_folder} \
-                --DMS_reference_file_path ${DMS_reference_file_path} \
-                --DMS_data_folder ${DMS_data_folder} 
-                ##--performance_by_depth
+                --DMS_reference_file_path ${DMS_reference_file_path_subs} \
+                --DMS_data_folder ${DMS_data_folder_subs} \
+                --performance_by_depth

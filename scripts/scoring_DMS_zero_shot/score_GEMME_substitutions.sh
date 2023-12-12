@@ -1,18 +1,29 @@
 #!/bin/bash 
+#SBATCH --cpus-per-task=1
+#SBATCH -p short
+#SBATCH -t 06:00:00
+#SBATCH --mem=48G
+#SBATCH --mail-type=TIME_LIMIT_80,TIME_LIMIT,FAIL,ARRAY_TASKS
+#SBATCH --mail-user="Daniel_Ritter@hms.harvard.edu"
+#SBATCH --output=./slurm/gemme/gemme-%A_%3a-%x.out   # Nice tip: using %3a to pad to 3 characters (23 -> 023)
+#SBATCH --error=./slurm/gemme/gemme-%A_%3a-%x.err   # Optional: Redirect STDERR to its own file
+#SBATCH --job-name="gemme_scoring"
+#SBATCH --array=0-2
 
-#Note: GEMME requires python, java and R as dependencies, to run JET2 and the seqinr package. See http://www.lcqb.upmc.fr/GEMME/download.html for more details and a docker 
-#image containing all dependencies
+module load miniconda3/4.10.3
+module load gcc/9.2.0
+module load java/jdk-11.0.11
+module load R/4.3.1
 
-# source activate proteingym_env 
+source ../zero_shot_config.sh
+source activate proteingym_env
 
-DMS_reference_file="../../reference_files/DMS_substitutions.csv"
-DMS_DATA_FOLDER="/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/DMS_assays/substitutions_merged"
-MSA_FOLDER="/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/MSA_merged/DMS_substitutions_MSAs"
-protein_index=0
-OUTPUT_SCORES_FOLDER="/n/groups/marks/projects/marks_lab_and_oatml/ProteinGym/model_scores/zero_shot_substitutions/GEMME"
-GEMME_LOCATION="/n/groups/marks/software/GEMME/GEMME"
-JET2_LOCATION="/n/groups/marks/software/JET2/JET2"
+export DMS_index=$SLURM_ARRAY_TASK_ID
+export GEMME_LOCATION="/n/groups/marks/software/GEMME/GEMME"
+export JET2_LOCATION="/n/groups/marks/software/JET2/JET2"
+export TEMP_FOLDER="./gemme_tmp/"
+export DMS_output_score_folder="${DMS_output_score_folder_subs}/GEMME/"
 
-python ../../proteingym/baselines/gemme/compute_fitness.py --DMS_index=$protein_index --DMS_reference_file_path=$DMS_reference_file \
---DMS_data_folder=$DMS_DATA_FOLDER --MSA_folder=$MSA_FOLDER --output_scores_folder=$OUTPUT_SCORES_FOLDER \
---GEMME_path=$GEMME_LOCATION --JET_path=$JET2_LOCATION
+srun python ../../proteingym/baselines/gemme/compute_fitness.py --DMS_index=$DMS_index --DMS_reference_file_path=$DMS_reference_file_path_subs \
+--DMS_data_folder=$DMS_data_folder_subs --MSA_folder=$DMS_MSA_data_folder --output_scores_folder=$DMS_output_score_folder \
+--GEMME_path=$GEMME_LOCATION --JET_path=$JET2_LOCATION --temp_folder=$TEMP_FOLDER
