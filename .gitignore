@@ -30,6 +30,8 @@ o2_scripts/
 # And temporary scripts directories
 scripts/scoring_DMS_zero_shot/HMM_temp/
 scripts/scoring_DMS_zero_shot/gemme_tmp/
+**/gemme_tmp/*
+**/vespa_tmp/*
 
 
 # Optional:
